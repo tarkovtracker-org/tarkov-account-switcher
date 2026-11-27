@@ -10,7 +10,7 @@ The switcher follows the Windows app color preference and respects Windows contr
 
 1. Open the switcher as a standard Windows user. It detects the standalone BSG launcher from its Windows installation entry. If it cannot find one, choose your installed `BsgLauncher.exe`.
 2. Sign in directly in the BSG Launcher and leave it open. In the switcher, select **Save current BSG account**, enter a nickname, and save. For another account, sign in to it in the BSG Launcher first, then repeat.
-3. Click an account in the switcher's tray menu to switch. In the main window, double-click an account or use **Switch account**.
+3. Click an account in the switcher's tray menu to switch. In the main window, double-click an account or use **Switch account**. When the running launcher has session data that matches a saved account, Relay marks it **Active** and disables switching to it. If Relay cannot identify the active account, switching stays available.
 4. Use **Sign in again** if the launcher rejects a saved session. If the switcher asks you to close the launcher, exit it from its tray menu and retry.
 
 The launcher must finish shutting down before the switcher replaces its settings. Close a running game or a different launcher installation before switching. The utility targets the standalone launcher. Use Steam's own account flow for Steam-linked play.

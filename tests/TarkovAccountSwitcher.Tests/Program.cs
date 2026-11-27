@@ -163,9 +163,46 @@ var tests = new (string Name, Func<Fixture, Task> Run)[]
         Check(f.Service.Read().LauncherPath is not null, "manual selection did not save");
         return Task.CompletedTask;
     }),
+    ("Active account follows the running launcher's saved identity and clears when uncertain", f =>
+    {
+        Guid? Active() => f.Service.ReadActiveAccount(f.Service.Read());
+        f.Write(" ONE@example.test ", "rotated");
+        Check(Active() == f.One.Id, "did not identify the signed-in account after token rotation");
+        f.Write(f.Two.Email, "manual-switch");
+        Check(Active() == f.Two.Id, "did not follow a manual account change");
+        f.Process.Running = false;
+        Check(Active() is null, "marked the last account active while the launcher was closed");
+        f.Process.Running = true;
+        f.Process.OnIsRunning = _ => throw new InvalidOperationException("Other launcher");
+        Check(Active() is null, "marked an account from a different launcher installation");
+        f.Process.OnIsRunning = null;
+        File.WriteAllText(f.Settings.Path, new JsonObject { ["login"] = f.Two.Email }.ToJsonString());
+        Check(Active() is null, "marked an account active based only on a login hint");
+        File.WriteAllText(f.Settings.Path, "{");
+        Check(Active() is null, "marked an account from unreadable settings");
+        f.Write("unsaved@example.test", "valid");
+        Check(Active() is null, "marked an unsaved account active");
+        f.Write(f.One.Email, "valid");
+        var vault = f.Service.Read();
+        f.Store.Save(vault with { Accounts = [.. vault.Accounts, f.One with { Id = Guid.NewGuid() }] });
+        Check(Active() is null, "chose an arbitrary account for an ambiguous saved identity");
+        f.Store.Save(vault);
+        f.Journal(f.Settings.Read());
+        Check(Active() is null, "marked an account during pending recovery");
+        return Task.CompletedTask;
+    }),
+    ("Switching to the active account leaves the launcher and settings untouched", async f =>
+    {
+        f.Write(f.One.Email, "active");
+        var before = f.Settings.Read()!;
+        await Reject(() => f.Service.SwitchAsync(f.One.Id));
+        Check(f.Process.Closes == 0 && f.Process.Starts == 0 && before.SequenceEqual(f.Settings.Read()!),
+            "switching to the active account changed or restarted the launcher");
+    }),
     ("Closes before capturing, restores the requested session, preserves extra settings", async f =>
     {
         f.Write("one@example.test", "obsolete");
+        f.Process.Running = false;
         await f.Service.SwitchAsync(f.One.Id);
         f.Write("two@example.test", "two");
         f.Process.OnClose = () => f.Write("two@example.test", "refreshed");
