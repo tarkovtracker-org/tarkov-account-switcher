@@ -19,6 +19,21 @@ internal sealed class SwitchService(VaultStore store, LauncherSettings settings,
 
     internal Vault Read() => store.Load();
 
+    internal Guid? ReadActiveAccount(Vault vault)
+    {
+        if (vault.Pending is not null || vault.LauncherPath is null || vault.Accounts.Length == 0)
+            return null;
+
+        try
+        {
+            return MatchActiveAccount(vault, LauncherSettings.Parse(settings.Read()));
+        }
+        catch (Exception error) when (IsExpected(error))
+        {
+            return null;
+        }
+    }
+
     internal Vault ReadWithLauncherDetection(Func<string?> discover)
     {
         var vault = Read();
@@ -88,7 +103,9 @@ internal sealed class SwitchService(VaultStore store, LauncherSettings settings,
         var path = vault.LauncherPath ?? throw new InvalidOperationException("Choose BsgLauncher.exe first.");
         GetAccount(vault, id);
         launcher.ValidatePath(path);
-        LauncherSettings.Parse(settings.Read());
+        var current = LauncherSettings.Parse(settings.Read());
+        if (!signInAgain && MatchActiveAccount(vault, current) == id)
+            throw new InvalidOperationException("This account is already active in the BSG Launcher.");
 
         await launcher.CloseAsync(path).ConfigureAwait(false);
         launcher.EnsureStopped();
@@ -208,6 +225,25 @@ internal sealed class SwitchService(VaultStore store, LauncherSettings settings,
     private static Account GetAccount(Vault vault, Guid id) =>
         vault.Accounts.FirstOrDefault(account => account.Id == id)
         ?? throw new InvalidOperationException("The selected account is unavailable.");
+
+    private Guid? MatchActiveAccount(Vault vault, System.Text.Json.Nodes.JsonObject document)
+    {
+        var (login, session) = LauncherSettings.ReadSession(document);
+        if (login is null || session is null || vault.LauncherPath is not { } path)
+            return null;
+
+        Guid? match = null;
+        foreach (var account in vault.Accounts)
+        {
+            if (!SameEmail(account.Email, login))
+                continue;
+            if (match is not null)
+                return null;
+            match = account.Id;
+        }
+
+        return match is not null && launcher.IsRunning(path) ? match : null;
+    }
 
     private static bool SameEmail(string first, string second) =>
         string.Equals(first.Trim(), second.Trim(), StringComparison.OrdinalIgnoreCase);

@@ -12,6 +12,10 @@ internal sealed class MainForm : SwitcherForm
         IntegralHeight = false, DrawMode = DrawMode.OwnerDrawFixed, Margin = Padding.Empty
     };
     private readonly Label emptyAccounts = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter };
+    private readonly Label activeStatus = new()
+    {
+        Text = "Active account unknown", AutoSize = true, Margin = new Padding(0, 0, 0, 8), Visible = false
+    };
     private readonly Label path = new()
     {
         Anchor = AnchorStyles.Left | AnchorStyles.Right, Height = 22, AutoEllipsis = true,
@@ -41,8 +45,10 @@ internal sealed class MainForm : SwitcherForm
     private readonly ContextMenuStrip menu = new();
     private readonly System.Windows.Forms.Timer capture = new() { Interval = 300 };
     private readonly System.Windows.Forms.Timer expiry = new() { Interval = 300_000 };
+    private readonly System.Windows.Forms.Timer activeRefresh = new() { Interval = 2_000 };
     private FileSystemWatcher? watcher;
     private Vault vault = Vault.Empty;
+    private Guid? activeAccount;
     private Guid watchedAccount;
     private int captureAttempts;
     private bool busy;
@@ -89,13 +95,21 @@ internal sealed class MainForm : SwitcherForm
         accounts.SelectedIndexChanged += (_, _) => SetControls();
         tray.ContextMenuStrip = menu;
         tray.DoubleClick += (_, _) => ShowWindow();
+        menu.Opening += (_, _) => RefreshActiveAccount();
         capture.Tick += (_, _) => CaptureTick();
         expiry.Tick += (_, _) => StopWatching();
+        activeRefresh.Tick += (_, _) =>
+        {
+            if (Visible && !menu.Visible)
+                RefreshActiveAccount();
+        };
+        Activated += (_, _) => RefreshActiveAccount();
         Shown += async (_, _) =>
         {
             if (loaded)
                 return;
             RefreshView(announceRecovery: true);
+            activeRefresh.Start();
             tray.Visible = true;
             await CheckForUpdates(manual: false);
         };
@@ -116,8 +130,9 @@ internal sealed class MainForm : SwitcherForm
     {
         var layout = new TableLayoutPanel
         {
-            Dock = DockStyle.Fill, Padding = new Padding(24, 20, 24, 18), ColumnCount = 1, RowCount = 4
+            Dock = DockStyle.Fill, Padding = new Padding(24, 20, 24, 18), ColumnCount = 1, RowCount = 5
         };
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -128,17 +143,18 @@ internal sealed class MainForm : SwitcherForm
             Text = "Accounts", Font = headingFont, AutoSize = true, Anchor = AnchorStyles.Left, Margin = Padding.Empty
         };
         layout.Controls.Add(SwitcherStyle.Split(title, saveCurrent, new Padding(0, 0, 0, 15)), 0, 0);
+        layout.Controls.Add(activeStatus, 0, 1);
 
         emptyAccounts.Text = "Sign in through the BSG Launcher, then save your current account.";
         emptyAccounts.Padding = new Padding(14);
         cardContent.Controls.Add(accounts);
         cardContent.Controls.Add(emptyAccounts);
         card.Controls.Add(cardContent);
-        layout.Controls.Add(card, 0, 1);
+        layout.Controls.Add(card, 0, 2);
 
         var actions = SwitcherStyle.ButtonRow(switchAccount, signIn, remove, restore, keep);
         actions.Margin = new Padding(0, 12, 0, 12);
-        layout.Controls.Add(actions, 0, 2);
+        layout.Controls.Add(actions, 0, 3);
 
         var footer = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, AutoSize = true, Margin = Padding.Empty };
         footer.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -164,7 +180,7 @@ internal sealed class MainForm : SwitcherForm
             updateStatus.Text = $"Version {updates.Current}";
             footer.Controls.Add(SwitcherStyle.Split(updateStatus, updateButton, new Padding(0, 8, 0, 0)), 0, 3);
         }
-        layout.Controls.Add(footer, 0, 3);
+        layout.Controls.Add(footer, 0, 4);
         return layout;
     }
 
@@ -174,7 +190,7 @@ internal sealed class MainForm : SwitcherForm
         card.BackColor = footerRule.BackColor = Palette.Border;
         cardContent.BackColor = accounts.BackColor = Palette.Surface;
         accounts.ForeColor = Palette.Text;
-        emptyAccounts.ForeColor = path.ForeColor = updateStatus.ForeColor = Palette.SecondaryText;
+        emptyAccounts.ForeColor = activeStatus.ForeColor = path.ForeColor = updateStatus.ForeColor = Palette.SecondaryText;
         status.BackColor = Palette.Info;
         foreach (var button in new[] { choose, switchAccount, saveCurrent, signIn, remove, restore, keep, updateButton })
             button.ApplyPalette(Palette);
@@ -201,10 +217,11 @@ internal sealed class MainForm : SwitcherForm
         TextRenderer.DrawText(e.Graphics, account.Label, accountFont, name, foreground, rowText);
 
         var saved = account.Session is not null;
-        var (back, fore) = Palette.SessionColors(saved, selected);
+        var active = account.Id == activeAccount;
+        var (back, fore) = active ? (Palette.Accent, Palette.AccentText) : Palette.SessionColors(saved, selected);
         brush.Color = back;
         e.Graphics.FillRectangle(brush, pill);
-        TextRenderer.DrawText(e.Graphics, saved ? "Session saved" : "Sign-in required", bodyFont, pill,
+        TextRenderer.DrawText(e.Graphics, active ? "Active" : saved ? "Session saved" : "Sign-in required", bodyFont, pill,
             fore, rowText | TextFormatFlags.HorizontalCenter);
         using var rule = new Pen(Palette.Border);
         e.Graphics.DrawLine(rule, e.Bounds.Left, e.Bounds.Bottom - 1, e.Bounds.Right, e.Bounds.Bottom - 1);
@@ -242,8 +259,28 @@ internal sealed class MainForm : SwitcherForm
         path.Text = vault.LauncherPath is { } launcher ? $"Launcher: {launcher}" : "Launcher location not set";
         if (announceRecovery && vault.Pending is not null)
             status.Text = "A switch was interrupted. Restore the previous settings or keep the current settings.";
+        RefreshActiveAccount(rebuildTray: false);
         SetControls();
         RebuildTray();
+    }
+
+    private void RefreshActiveAccount(bool rebuildTray = true)
+    {
+        if (busy)
+            return;
+
+        var detected = loaded ? service.ReadActiveAccount(vault) : null;
+        activeStatus.Visible = loaded && vault.Pending is null && vault.Accounts.Length > 0 && detected is null;
+        var current = detected is { } id ? vault.Accounts.First(account => account.Id == id) : null;
+        accounts.AccessibleDescription = current is null ? activeStatus.Text : $"Active account: {current.Label}";
+        if (activeAccount == detected)
+            return;
+
+        activeAccount = detected;
+        accounts.Invalidate();
+        SetControls();
+        if (rebuildTray)
+            RebuildTray();
     }
 
     private void SetControls()
@@ -252,7 +289,8 @@ internal sealed class MainForm : SwitcherForm
         var ready = loaded && !busy && !recovery;
         choose.Enabled = ready;
         saveCurrent.Enabled = ready && vault.LauncherPath is not null;
-        switchAccount.Enabled = signIn.Enabled = saveCurrent.Enabled && Selected is not null;
+        signIn.Enabled = saveCurrent.Enabled && Selected is not null;
+        switchAccount.Enabled = signIn.Enabled && Selected?.Id != activeAccount;
         remove.Enabled = ready && Selected is not null;
         switchAccount.Visible = signIn.Visible = remove.Visible = !recovery;
         restore.Visible = keep.Visible = recovery;
@@ -269,9 +307,12 @@ internal sealed class MainForm : SwitcherForm
         {
             foreach (var account in vault.Accounts)
             {
-                var item = new ToolStripMenuItem(account.Label.Replace("&", "&&"))
+                var active = account.Id == activeAccount;
+                var label = account.Label.Replace("&", "&&");
+                var item = new ToolStripMenuItem(active ? $"{label} (Active)" : label)
                 {
-                    Enabled = !busy
+                    Enabled = !busy && !active,
+                    Checked = active
                 };
                 item.Click += async (_, _) => await SwitchAccount(account.Id);
                 menu.Items.Add(item);
@@ -423,6 +464,12 @@ internal sealed class MainForm : SwitcherForm
     {
         if (busy)
             return;
+        if (!signInAgain)
+        {
+            RefreshActiveAccount();
+            if (id == activeAccount)
+                return;
+        }
         StopWatching();
         await Run(async () =>
         {
@@ -563,6 +610,7 @@ internal sealed class MainForm : SwitcherForm
             StopWatching();
             capture.Dispose();
             expiry.Dispose();
+            activeRefresh.Dispose();
             tray.Dispose();
             menu.Dispose();
             headingFont.Dispose();
