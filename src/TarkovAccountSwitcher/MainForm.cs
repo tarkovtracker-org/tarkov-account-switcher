@@ -7,6 +7,8 @@ internal sealed class MainForm : SwitcherForm
     internal const string AppTitle = "Tarkov Account Switcher";
     private readonly SwitchService service;
     private readonly string settingsPath;
+    private readonly AppUpdates? updates;
+    private readonly CancellationTokenSource updateLifetime = new();
     private readonly ListBox accounts = new()
     {
         Dock = DockStyle.Fill, AccessibleName = "Saved accounts", BorderStyle = BorderStyle.None,
@@ -26,6 +28,12 @@ internal sealed class MainForm : SwitcherForm
     private readonly SwitcherButton remove = SwitcherStyle.Button("Remove…");
     private readonly SwitcherButton restore = SwitcherStyle.Button("Restore previous settings", primary: true);
     private readonly SwitcherButton keep = SwitcherStyle.Button("Keep current settings…");
+    private readonly SwitcherButton updateButton = SwitcherStyle.Button("Check for updates");
+    private readonly Label updateStatus = new()
+    {
+        Anchor = AnchorStyles.Left | AnchorStyles.Right, Height = 22, AutoEllipsis = true,
+        TextAlign = ContentAlignment.MiddleLeft, Margin = new Padding(0, 0, 10, 0)
+    };
     private readonly Panel card = new() { Dock = DockStyle.Fill, Margin = Padding.Empty, Padding = new Padding(1) };
     private readonly Panel cardContent = new() { Dock = DockStyle.Fill };
     private readonly Panel footerRule = new() { Height = 1, Dock = DockStyle.Fill, Margin = new Padding(0, 0, 0, 8) };
@@ -43,16 +51,20 @@ internal sealed class MainForm : SwitcherForm
     private bool busy;
     private bool exiting;
     private bool loaded;
+    private bool checkingUpdate;
+    private UpdateRelease? availableUpdate;
 
-    internal MainForm(SwitchService service, string settingsPath, Func<SwitcherPalette>? readPalette = null)
+    internal MainForm(SwitchService service, string settingsPath, Func<SwitcherPalette>? readPalette = null,
+        AppUpdates? updates = null)
         : base(readPalette)
     {
         this.service = service;
         this.settingsPath = settingsPath;
+        this.updates = updates;
         Text = AppTitle;
         Icon = SystemIcons.Application;
-        ClientSize = new Size(680, 465);
-        MinimumSize = new Size(600, 415);
+        ClientSize = new Size(680, updates is null ? 465 : 510);
+        MinimumSize = new Size(600, updates is null ? 415 : 460);
         StartPosition = FormStartPosition.CenterScreen;
         AutoScaleMode = AutoScaleMode.Dpi;
         Font = bodyFont;
@@ -65,6 +77,7 @@ internal sealed class MainForm : SwitcherForm
         AcceptButton = switchAccount;
 
         choose.Click += (_, _) => ChooseLauncher();
+        updateButton.Click += async (_, _) => await UpdateAction();
         add.Click += async (_, _) => await AddAccount();
         remove.Click += (_, _) => RemoveAccount();
         switchAccount.Click += async (_, _) => await SwitchSelected();
@@ -81,12 +94,13 @@ internal sealed class MainForm : SwitcherForm
         tray.DoubleClick += (_, _) => ShowWindow();
         capture.Tick += (_, _) => CaptureTick();
         expiry.Tick += (_, _) => StopWatching();
-        Shown += (_, _) =>
+        Shown += async (_, _) =>
         {
             if (loaded)
                 return;
             RefreshView(announceRecovery: true);
             tray.Visible = true;
+            await CheckForUpdates(manual: false);
         };
         FormClosing += (_, args) =>
         {
@@ -98,6 +112,8 @@ internal sealed class MainForm : SwitcherForm
     }
 
     private Account? Selected => accounts.SelectedItem as Account;
+    internal bool HasLoadedVault => loaded;
+    internal void ReportUpdateIssue(string message) => updateStatus.Text = message;
 
     private Control BuildLayout()
     {
@@ -127,7 +143,8 @@ internal sealed class MainForm : SwitcherForm
         actions.Margin = new Padding(0, 12, 0, 12);
         layout.Controls.Add(actions, 0, 2);
 
-        var footer = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, AutoSize = true, Margin = Padding.Empty };
+        var footer = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, AutoSize = true, Margin = Padding.Empty };
+        footer.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         footer.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         footer.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         footer.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -145,6 +162,11 @@ internal sealed class MainForm : SwitcherForm
         footer.Controls.Add(footerRule, 0, 1);
         path.Margin = new Padding(0, 0, 10, 0);
         footer.Controls.Add(SwitcherStyle.Split(path, choose, Padding.Empty), 0, 2);
+        if (updates is not null)
+        {
+            updateStatus.Text = $"Version {updates.Current}";
+            footer.Controls.Add(SwitcherStyle.Split(updateStatus, updateButton, new Padding(0, 8, 0, 0)), 0, 3);
+        }
         layout.Controls.Add(footer, 0, 3);
         return layout;
     }
@@ -155,9 +177,9 @@ internal sealed class MainForm : SwitcherForm
         card.BackColor = footerRule.BackColor = Palette.Border;
         cardContent.BackColor = accounts.BackColor = Palette.Surface;
         accounts.ForeColor = Palette.Text;
-        emptyAccounts.ForeColor = path.ForeColor = Palette.SecondaryText;
+        emptyAccounts.ForeColor = path.ForeColor = updateStatus.ForeColor = Palette.SecondaryText;
         status.BackColor = Palette.Info;
-        foreach (var button in new[] { choose, switchAccount, add, signIn, remove, restore, keep })
+        foreach (var button in new[] { choose, switchAccount, add, signIn, remove, restore, keep, updateButton })
             button.ApplyPalette(Palette);
         SwitcherStyle.StyleMenu(menu, Palette);
     }
@@ -237,6 +259,7 @@ internal sealed class MainForm : SwitcherForm
         switchAccount.Visible = signIn.Visible = remove.Visible = !recovery;
         restore.Visible = keep.Visible = recovery;
         restore.Enabled = keep.Enabled = loaded && !busy;
+        updateButton.Enabled = loaded && !busy && !checkingUpdate;
     }
 
     private void RebuildTray()
@@ -257,12 +280,103 @@ internal sealed class MainForm : SwitcherForm
             }
         }
         menu.Items.Add(new ToolStripSeparator());
+        if (updates is not null)
+        {
+            var update = menu.Items.Add(updateButton.Text, null, async (_, _) =>
+            {
+                ShowWindow();
+                await UpdateAction();
+            });
+            update.Enabled = updateButton.Enabled;
+        }
         var exit = menu.Items.Add("Exit", null, (_, _) =>
         {
             exiting = true;
             Close();
         });
         exit.Enabled = !busy;
+    }
+
+    private Task UpdateAction() => availableUpdate is { } release
+        ? InstallUpdate(release)
+        : CheckForUpdates(manual: true);
+
+    private async Task CheckForUpdates(bool manual)
+    {
+        if (updates is null || busy || checkingUpdate)
+            return;
+
+        checkingUpdate = true;
+        SetControls();
+        RebuildTray();
+        if (manual)
+            updateStatus.Text = "Checking GitHub releases…";
+
+        try
+        {
+            availableUpdate = await updates.Client.CheckAsync(updates.Current, updateLifetime.Token);
+            if (IsDisposed)
+                return;
+
+            if (availableUpdate is { } available)
+            {
+                updateButton.Text = $"Update to {available.Tag}";
+                updateStatus.Text = $"{available.Tag} is available.";
+            }
+            else if (manual)
+            {
+                updateStatus.Text = $"Version {updates.Current} is up to date.";
+            }
+        }
+        catch (Exception error) when (UpdateInstallations.IsExpected(error))
+        {
+            if (manual && !IsDisposed)
+                updateStatus.Text = "Could not check for a verified GitHub release. Try again.";
+        }
+        finally
+        {
+            checkingUpdate = false;
+            if (!IsDisposed)
+            {
+                SetControls();
+                RebuildTray();
+            }
+        }
+    }
+
+    private async Task InstallUpdate(UpdateRelease release)
+    {
+        if (updates is null || busy || checkingUpdate || !loaded)
+            return;
+
+        busy = true;
+        SetControls();
+        RebuildTray();
+        updateStatus.Text = $"Downloading and verifying {release.Tag}…";
+        try
+        {
+            var cancellation = updateLifetime.Token;
+            var install = await Task.Run(() => updates.Installations.StageAsync(updates.Client, release, cancellation));
+            if (IsDisposed)
+                return;
+            updates.Installations.StartPending(install);
+        }
+        catch (Exception error) when (UpdateInstallations.IsExpected(error))
+        {
+            if (!IsDisposed)
+            {
+                updateStatus.Text = error is InvalidDataException
+                    ? "The update could not be verified."
+                    : "The update could not start. Try again.";
+                busy = false;
+                SetControls();
+                RebuildTray();
+            }
+            return;
+        }
+
+        exiting = true;
+        Close();
     }
 
     private void ChooseLauncher()
@@ -446,6 +560,8 @@ internal sealed class MainForm : SwitcherForm
     {
         if (disposing && !IsDisposed)
         {
+            updateLifetime.Cancel();
+            updateLifetime.Dispose();
             StopWatching();
             capture.Dispose();
             expiry.Dispose();

@@ -21,6 +21,12 @@ Account details, saved sessions, and pending recovery data are protected by Wind
 
 Session restoration depends on the launcher's local settings format and whether BSG accepts the saved session. The switcher's status reports process launch. The launcher shows whether sign-in succeeded.
 
+## Updates
+
+The Windows x64 switcher checks GitHub on startup. You can also select **Check for updates** in the window or tray menu. When a new version appears, select **Update to v…** to download, verify, and restart. Builds released before the updater need one final manual installation.
+
+Updates install under the switcher's local app-data directory. The new build becomes the default once its window opens and the account vault loads. Continue opening your original switcher shortcut or executable. To start a specific older copy directly for recovery, run its executable with `--skip-update`.
+
 ## Build and verify
 
 Use Windows with the .NET SDK version in `global.json`.
@@ -32,3 +38,5 @@ dotnet publish src/TarkovAccountSwitcher -c Release -r win-x64 --self-contained 
 ```
 
 The framework-dependent publish requires the .NET 10 Windows Desktop Runtime. The regression tests use synthetic sessions in temporary folders.
+
+For releases, publish a self-contained `win-x64` build with `-p:Version=X.Y.Z` matching the tag `vX.Y.Z`. Package the publish folder as the top-level `TarkovAccountSwitcher` folder in `TarkovAccountSwitcher-vX.Y.Z-win-x64.zip`. The updater expects that asset name and GitHub's SHA-256 digest.
