@@ -5,6 +5,45 @@ using TarkovAccountSwitcher;
 
 var tests = new (string Name, Func<Fixture, Task> Run)[]
 {
+    ("An open window follows both system theme changes", _ =>
+    {
+        Exception? failure = null;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                var light = SwitcherPalette.FromPreferences(dark: false, highContrast: false);
+                var dark = SwitcherPalette.FromPreferences(dark: true, highContrast: false);
+                var preference = light;
+                using var form = new ThemeProbe(() => preference);
+                Check(form.BackColor == light.Canvas, "did not use initial theme");
+                preference = dark;
+                form.RaiseSettingsChange();
+                Check(form.BackColor == dark.Canvas && form.ForeColor == dark.Text, "did not repaint dark theme");
+                preference = light;
+                form.RaiseSettingsChange();
+                Check(form.BackColor == light.Canvas && form.ForeColor == light.Text, "did not repaint light theme");
+            }
+            catch (Exception error)
+            {
+                failure = error;
+            }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join();
+        if (failure is not null)
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw(failure);
+        return Task.CompletedTask;
+    }),
+    ("Windows contrast colors take precedence over dark mode", _ =>
+    {
+        var palette = SwitcherPalette.FromPreferences(dark: true, highContrast: true);
+        Check(palette.HighContrast && !palette.Dark, "dark mode overrode contrast colors");
+        Check(palette.SessionColors(saved: true, selected: true) == (SystemColors.Highlight, SystemColors.HighlightText),
+            "selected session badge did not use system contrast colors");
+        return Task.CompletedTask;
+    }),
     ("Account row height remains valid at 500 percent scaling", _ =>
     {
         using var list = new ListBox { DrawMode = DrawMode.OwnerDrawFixed };
@@ -213,6 +252,22 @@ static async Task Reject(Func<Task> operation)
         return;
     }
     throw new Exception("Expected the operation to reject.");
+}
+
+internal sealed class ThemeProbe : SwitcherForm
+{
+    internal ThemeProbe(Func<SwitcherPalette> readPalette) : base(readPalette)
+    {
+        ApplyPalette();
+        _ = Handle;
+    }
+
+    internal void RaiseSettingsChange()
+    {
+        var message = Message.Create(Handle, 0x001A, IntPtr.Zero, IntPtr.Zero);
+        WndProc(ref message);
+        Application.DoEvents();
+    }
 }
 
 internal sealed class Fixture : IDisposable

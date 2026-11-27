@@ -2,7 +2,7 @@ using System.Net.Mail;
 
 namespace TarkovAccountSwitcher;
 
-internal sealed class MainForm : Form
+internal sealed class MainForm : SwitcherForm
 {
     internal const string AppTitle = "Tarkov Account Switcher";
     private readonly SwitchService service;
@@ -19,13 +19,16 @@ internal sealed class MainForm : Form
         TextAlign = ContentAlignment.MiddleLeft
     };
     private readonly Label status = new() { AutoSize = true, Dock = DockStyle.Fill, AccessibleName = "Switch status" };
-    private readonly Button choose = SwitcherStyle.Button("Choose launcher…");
-    private readonly Button switchAccount = SwitcherStyle.Button("Switch account", primary: true);
-    private readonly Button add = SwitcherStyle.Button("Add account…");
-    private readonly Button signIn = SwitcherStyle.Button("Sign in again");
-    private readonly Button remove = SwitcherStyle.Button("Remove…");
-    private readonly Button restore = SwitcherStyle.Button("Restore previous settings", primary: true);
-    private readonly Button keep = SwitcherStyle.Button("Keep current settings…");
+    private readonly SwitcherButton choose = SwitcherStyle.Button("Choose launcher…");
+    private readonly SwitcherButton switchAccount = SwitcherStyle.Button("Switch account", primary: true);
+    private readonly SwitcherButton add = SwitcherStyle.Button("Add account…");
+    private readonly SwitcherButton signIn = SwitcherStyle.Button("Sign in again");
+    private readonly SwitcherButton remove = SwitcherStyle.Button("Remove…");
+    private readonly SwitcherButton restore = SwitcherStyle.Button("Restore previous settings", primary: true);
+    private readonly SwitcherButton keep = SwitcherStyle.Button("Keep current settings…");
+    private readonly Panel card = new() { Dock = DockStyle.Fill, Margin = Padding.Empty, Padding = new Padding(1) };
+    private readonly Panel cardContent = new() { Dock = DockStyle.Fill };
+    private readonly Panel footerRule = new() { Height = 1, Dock = DockStyle.Fill, Margin = new Padding(0, 0, 0, 8) };
     private readonly Font headingFont = new("Segoe UI", 21F, FontStyle.Bold);
     private readonly Font accountFont = new("Segoe UI", 10F, FontStyle.Bold);
     private readonly Font bodyFont = new("Segoe UI", 10F);
@@ -41,7 +44,8 @@ internal sealed class MainForm : Form
     private bool exiting;
     private bool loaded;
 
-    internal MainForm(SwitchService service, string settingsPath)
+    internal MainForm(SwitchService service, string settingsPath, Func<SwitcherPalette>? readPalette = null)
+        : base(readPalette)
     {
         this.service = service;
         this.settingsPath = settingsPath;
@@ -51,10 +55,9 @@ internal sealed class MainForm : Form
         MinimumSize = new Size(600, 415);
         StartPosition = FormStartPosition.CenterScreen;
         AutoScaleMode = AutoScaleMode.Dpi;
-        BackColor = SwitcherStyle.Canvas;
-        ForeColor = SwitcherStyle.Text;
         Font = bodyFont;
         Controls.Add(BuildLayout());
+        ApplyPalette();
 
         accounts.DrawItem += DrawAccount;
         SwitcherStyle.SetAccountRowHeight(accounts, Pixels(54));
@@ -113,11 +116,7 @@ internal sealed class MainForm : Form
         };
         layout.Controls.Add(SwitcherStyle.Split(title, add, new Padding(0, 0, 0, 15)), 0, 0);
 
-        var card = new Panel { Dock = DockStyle.Fill, BackColor = SwitcherStyle.Border, Margin = Padding.Empty, Padding = new Padding(1) };
-        var cardContent = new Panel { Dock = DockStyle.Fill, BackColor = SwitcherStyle.Surface };
-        accounts.BackColor = SwitcherStyle.Surface;
         emptyAccounts.Text = "No saved accounts. Select Add account to get started.";
-        emptyAccounts.ForeColor = SwitcherStyle.SecondaryText;
         emptyAccounts.Padding = new Padding(14);
         cardContent.Controls.Add(accounts);
         cardContent.Controls.Add(emptyAccounts);
@@ -135,7 +134,6 @@ internal sealed class MainForm : Form
 
         status.Margin = new Padding(0, 0, 0, 8);
         status.Padding = new Padding(10, 7, 10, 7);
-        status.BackColor = SwitcherStyle.Info;
         status.Visible = false;
         status.TextChanged += (_, _) =>
         {
@@ -144,15 +142,24 @@ internal sealed class MainForm : Form
         };
         footer.SizeChanged += (_, _) => status.MaximumSize = new Size(footer.ClientSize.Width, 0);
         footer.Controls.Add(status, 0, 0);
-        footer.Controls.Add(new Panel
-        {
-            Height = 1, Dock = DockStyle.Fill, BackColor = SwitcherStyle.Border, Margin = new Padding(0, 0, 0, 8)
-        }, 0, 1);
-        path.ForeColor = SwitcherStyle.SecondaryText;
+        footer.Controls.Add(footerRule, 0, 1);
         path.Margin = new Padding(0, 0, 10, 0);
         footer.Controls.Add(SwitcherStyle.Split(path, choose, Padding.Empty), 0, 2);
         layout.Controls.Add(footer, 0, 3);
         return layout;
+    }
+
+    protected override void ApplyPalette()
+    {
+        base.ApplyPalette();
+        card.BackColor = footerRule.BackColor = Palette.Border;
+        cardContent.BackColor = accounts.BackColor = Palette.Surface;
+        accounts.ForeColor = Palette.Text;
+        emptyAccounts.ForeColor = path.ForeColor = Palette.SecondaryText;
+        status.BackColor = Palette.Info;
+        foreach (var button in new[] { choose, switchAccount, add, signIn, remove, restore, keep })
+            button.ApplyPalette(Palette);
+        SwitcherStyle.StyleMenu(menu, Palette);
     }
 
     private void DrawAccount(object? sender, DrawItemEventArgs e)
@@ -161,7 +168,8 @@ internal sealed class MainForm : Form
             return;
 
         var selected = (e.State & DrawItemState.Selected) != 0;
-        e.Graphics.FillRectangle(selected ? SwitcherStyle.SelectionBrush : SwitcherStyle.SurfaceBrush, e.Bounds);
+        using var brush = new SolidBrush(selected ? Palette.Selection : Palette.Surface);
+        e.Graphics.FillRectangle(brush, e.Bounds);
         var inset = Pixels(14);
         var pillHeight = Pixels(26);
         var pill = new Rectangle(e.Bounds.Right - inset - Pixels(116),
@@ -170,13 +178,17 @@ internal sealed class MainForm : Form
             Math.Max(0, pill.Left - e.Bounds.X - (inset * 2)), e.Bounds.Height);
         const TextFormatFlags rowText = TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine
             | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix;
-        TextRenderer.DrawText(e.Graphics, account.Label, accountFont, name, SwitcherStyle.RowText(selected), rowText);
+        var foreground = selected ? Palette.SelectionText : Palette.Text;
+        TextRenderer.DrawText(e.Graphics, account.Label, accountFont, name, foreground, rowText);
 
         var saved = account.Session is not null;
-        e.Graphics.FillRectangle(SwitcherStyle.StatusBrush(saved, selected), pill);
+        var (back, fore) = Palette.SessionColors(saved, selected);
+        brush.Color = back;
+        e.Graphics.FillRectangle(brush, pill);
         TextRenderer.DrawText(e.Graphics, saved ? "Session saved" : "Sign-in required", bodyFont, pill,
-            SwitcherStyle.StatusText(saved, selected), rowText | TextFormatFlags.HorizontalCenter);
-        e.Graphics.DrawLine(SwitcherStyle.BorderPen, e.Bounds.Left, e.Bounds.Bottom - 1, e.Bounds.Right, e.Bounds.Bottom - 1);
+            fore, rowText | TextFormatFlags.HorizontalCenter);
+        using var rule = new Pen(Palette.Border);
+        e.Graphics.DrawLine(rule, e.Bounds.Left, e.Bounds.Bottom - 1, e.Bounds.Right, e.Bounds.Bottom - 1);
         if ((e.State & DrawItemState.Focus) != 0)
             e.DrawFocusRectangle();
     }
@@ -269,7 +281,7 @@ internal sealed class MainForm : Form
 
     private async Task AddAccount()
     {
-        using var dialog = new AccountDialog();
+        using var dialog = new AccountDialog(ReadPalette);
         if (dialog.ShowDialog(this) != DialogResult.OK || busy)
             return;
 
@@ -446,15 +458,17 @@ internal sealed class MainForm : Form
         base.Dispose(disposing);
     }
 
-    private sealed class AccountDialog : Form
+    private sealed class AccountDialog : SwitcherForm
     {
         private readonly TextBox label = new() { Dock = DockStyle.Fill, MaxLength = 64, AccessibleName = "Account name" };
         private readonly TextBox email = new() { Dock = DockStyle.Fill, MaxLength = 254, AccessibleName = "Account email" };
+        private readonly SwitcherButton save = SwitcherStyle.Button("Add account", primary: true);
+        private readonly SwitcherButton cancel = SwitcherStyle.Button("Cancel");
 
         internal string AccountName => label.Text.Trim();
         internal string Email => email.Text.Trim();
 
-        internal AccountDialog()
+        internal AccountDialog(Func<SwitcherPalette> readPalette) : base(readPalette)
         {
             Text = "Add a Tarkov account";
             ClientSize = new Size(430, 220);
@@ -463,10 +477,6 @@ internal sealed class MainForm : Form
             MinimizeBox = MaximizeBox = false;
             ShowInTaskbar = false;
             AutoScaleMode = AutoScaleMode.Dpi;
-            BackColor = SwitcherStyle.Canvas;
-            ForeColor = SwitcherStyle.Text;
-            var save = SwitcherStyle.Button("Add account", primary: true);
-            var cancel = SwitcherStyle.Button("Cancel");
             cancel.DialogResult = DialogResult.Cancel;
             var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(20), ColumnCount = 1 };
             label.Margin = new Padding(0, 5, 0, 14);
@@ -477,6 +487,7 @@ internal sealed class MainForm : Form
             layout.Controls.Add(email);
             layout.Controls.Add(SwitcherStyle.ButtonRow(save, cancel));
             Controls.Add(layout);
+            ApplyPalette();
             AcceptButton = save;
             CancelButton = cancel;
             save.Click += (_, _) =>
@@ -489,6 +500,15 @@ internal sealed class MainForm : Form
                 }
                 DialogResult = DialogResult.OK;
             };
+        }
+
+        protected override void ApplyPalette()
+        {
+            base.ApplyPalette();
+            label.BackColor = email.BackColor = Palette.Surface;
+            label.ForeColor = email.ForeColor = Palette.Text;
+            save.ApplyPalette(Palette);
+            cancel.ApplyPalette(Palette);
         }
     }
 }

@@ -2,55 +2,37 @@ namespace TarkovAccountSwitcher;
 
 internal static class SwitcherStyle
 {
-    private static readonly bool HighContrast = SystemInformation.HighContrast;
-    internal static readonly Color Canvas = HighContrast ? SystemColors.Window : Color.FromArgb(245, 247, 250);
-    internal static readonly Color Surface = HighContrast ? SystemColors.Window : Color.White;
-    internal static readonly Color Text = HighContrast ? SystemColors.WindowText : Color.FromArgb(23, 35, 53);
-    internal static readonly Color SecondaryText = HighContrast ? SystemColors.WindowText : Color.FromArgb(69, 84, 103);
-    internal static readonly Color Border = HighContrast ? SystemColors.WindowText : Color.FromArgb(201, 210, 222);
-    internal static readonly Color Info = HighContrast ? SystemColors.Window : Color.FromArgb(231, 239, 249);
-    private static readonly Color Accent = Color.FromArgb(29, 70, 124);
-    private static readonly Color SavedText = Color.FromArgb(19, 88, 66);
-    private static readonly Color SignInText = Color.FromArgb(110, 69, 12);
-    internal static readonly Brush SurfaceBrush = new SolidBrush(Surface);
-    internal static readonly Brush SelectionBrush = new SolidBrush(HighContrast ? SystemColors.Highlight : Info);
-    private static readonly Brush SavedBrush = new SolidBrush(Color.FromArgb(226, 244, 236));
-    private static readonly Brush SignInBrush = new SolidBrush(Color.FromArgb(255, 242, 220));
-    internal static readonly Pen BorderPen = new(HighContrast ? Border : Color.FromArgb(231, 236, 242));
-
-    internal static Color RowText(bool selected) => HighContrast && selected ? SystemColors.HighlightText : Text;
-
-    internal static Brush StatusBrush(bool saved, bool selected) =>
-        HighContrast ? (selected ? SelectionBrush : SurfaceBrush) : saved ? SavedBrush : SignInBrush;
-
-    internal static Color StatusText(bool saved, bool selected) =>
-        HighContrast ? RowText(selected) : saved ? SavedText : SignInText;
-
     internal static void SetAccountRowHeight(ListBox list, int scaledPixels) =>
         list.ItemHeight = Math.Min(scaledPixels, 255);
 
-    internal static Button Button(string text, bool primary = false)
-    {
-        var button = new Button
+    internal static SwitcherButton Button(string text, bool primary = false) =>
+        new(primary)
         {
             Text = text, AutoSize = true, MinimumSize = new Size(0, 35),
             Padding = new Padding(11, 4, 11, 4), Margin = Padding.Empty
         };
-        if (HighContrast)
-            return button;
 
-        button.FlatStyle = FlatStyle.Flat;
-        button.UseVisualStyleBackColor = false;
-        button.FlatAppearance.BorderColor = primary ? Accent : Border;
-        button.FlatAppearance.MouseOverBackColor = primary ? Color.FromArgb(38, 84, 145) : Info;
-        button.ForeColor = primary ? Color.White : Text;
-        button.BackColor = primary ? Accent : Surface;
-        button.EnabledChanged += (_, _) =>
-        {
-            button.BackColor = button.Enabled && primary ? Accent : button.Enabled ? Surface : Canvas;
-            button.FlatAppearance.BorderColor = button.Enabled && primary ? Accent : Border;
-        };
-        return button;
+    internal static void StyleMenu(ContextMenuStrip menu, SwitcherPalette palette)
+    {
+        menu.BackColor = palette.Surface;
+        menu.ForeColor = palette.Text;
+        if (palette.HighContrast)
+            menu.RenderMode = ToolStripRenderMode.System;
+        else
+            menu.Renderer = new ToolStripProfessionalRenderer(new MenuColors(palette)) { RoundedEdges = false };
+    }
+
+    private sealed class MenuColors(SwitcherPalette palette) : ProfessionalColorTable
+    {
+        public override Color ToolStripDropDownBackground => palette.Surface;
+        public override Color MenuBorder => palette.Border;
+        public override Color MenuItemBorder => palette.Border;
+        public override Color MenuItemSelected => palette.Selection;
+        public override Color SeparatorDark => palette.Border;
+        public override Color SeparatorLight => palette.Surface;
+        public override Color ImageMarginGradientBegin => palette.Surface;
+        public override Color ImageMarginGradientMiddle => palette.Surface;
+        public override Color ImageMarginGradientEnd => palette.Surface;
     }
 
     internal static FlowLayoutPanel ButtonRow(params Button[] buttons)
@@ -79,5 +61,44 @@ internal static class SwitcherStyle
         row.Controls.Add(left, 0, 0);
         row.Controls.Add(right, 1, 0);
         return row;
+    }
+}
+
+internal sealed class SwitcherButton(bool primary) : Button
+{
+    private SwitcherPalette? palette;
+
+    internal void ApplyPalette(SwitcherPalette theme)
+    {
+        palette = theme;
+        FlatStyle = theme.HighContrast ? FlatStyle.Standard : FlatStyle.Flat;
+        UseVisualStyleBackColor = theme.HighContrast;
+        ApplyColors();
+    }
+
+    protected override void OnEnabledChanged(EventArgs e)
+    {
+        base.OnEnabledChanged(e);
+        ApplyColors();
+    }
+
+    private void ApplyColors()
+    {
+        if (palette is not { } theme)
+            return;
+
+        if (theme.HighContrast)
+        {
+            BackColor = Color.Empty;
+            ForeColor = Color.Empty;
+            UseVisualStyleBackColor = true;
+            return;
+        }
+
+        var accented = Enabled && primary;
+        ForeColor = accented ? theme.AccentText : theme.Text;
+        BackColor = accented ? theme.Accent : Enabled ? theme.Surface : theme.Canvas;
+        FlatAppearance.BorderColor = accented ? theme.Accent : theme.Border;
+        FlatAppearance.MouseOverBackColor = primary ? theme.AccentHover : theme.Info;
     }
 }
