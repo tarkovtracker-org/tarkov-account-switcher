@@ -3,6 +3,9 @@ using System.Text;
 using System.Text.Json.Nodes;
 using TarkovAccountSwitcher;
 
+// The console runner has no Windows message loop to resume async tests.
+WindowsFormsSynchronizationContext.AutoInstall = false;
+
 var tests = new (string Name, Func<Fixture, Task> Run)[]
 {
     ("An open window follows both system theme changes", _ =>
@@ -212,7 +215,7 @@ var tests = new (string Name, Func<Fixture, Task> Run)[]
         File.WriteAllBytes(f.VaultPath, bytes);
         await Reject(() => { f.Store.Load(); return Task.CompletedTask; });
     })
-};
+}.Concat(UpdateTests.Cases).ToArray();
 
 var selected = args.Length == 0 ? tests : tests.Where(test => test.Name.Contains(args[0], StringComparison.OrdinalIgnoreCase)).ToArray();
 if (selected.Length == 0)
