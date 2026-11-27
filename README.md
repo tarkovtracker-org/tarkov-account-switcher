@@ -2,32 +2,55 @@
 
 <img src="docs/brand/tarkov-relay-wordmark.svg" alt="Tarkov Relay Account Switcher" width="480">
 
-Tarkov Relay is a Windows tray utility for switching between your own saved standalone Battlestate Games launcher accounts. Save each account once, then switch between sessions from the tray.
+Tarkov Relay is an independent Windows tray app for switching between your own saved Battlestate Games (BSG) Launcher accounts. It reuses saved sessions so you can switch in one click while they’re still valid.
 
-## Use
+[Download for Windows x64](https://github.com/tarkovtracker-org/tarkov-account-switcher/releases/latest)
 
-The switcher follows the Windows app color preference and respects Windows contrast themes.
+## Features
 
-1. Open the switcher as a standard Windows user. It detects the standalone BSG launcher from its Windows installation entry. If it cannot find one, choose your installed `BsgLauncher.exe`.
-2. Sign in directly in the BSG Launcher and leave it open. In the switcher, select **Save current BSG account**, enter a nickname, and save. For another account, sign in to it in the BSG Launcher first, then repeat.
-3. Click an account in the switcher's tray menu to switch. In the main window, double-click an account or use **Switch account**. When the running launcher has session data that matches a saved account, Relay marks it **Active** and disables switching to it. If Relay cannot identify the active account, switching stays available.
-4. Use **Sign in again** if the launcher rejects a saved session. If the switcher asks you to close the launcher, exit it from its tray menu and retry.
+- **One-click switching** from the system tray, with an **Active** badge when Relay can identify the current account. Switching to that account is disabled.
+- **Nickname-only setup** with automatic detection of the standalone BSG Launcher.
+- **Settings recovery** if a switch is interrupted. Unrelated launcher settings and game caches are preserved.
+- **System themes** follow Windows light, dark, and contrast settings.
+- **In-app updates** download and install new releases when you choose.
 
-The launcher must finish shutting down before the switcher replaces its settings. Close a running game or a different launcher installation before switching. The utility targets the standalone launcher. Use Steam's own account flow for Steam-linked play.
+## Get started
 
-The switcher preserves unrelated launcher settings and leaves game caches in place. It keeps an encrypted recovery record before making changes. If a switch is interrupted, choose **Restore previous settings** with the launcher closed. If the launcher has since changed its settings, choose **Keep current settings** to discard the older recovery record.
+1. Download and extract the Windows x64 ZIP. Run `TarkovAccountSwitcher.exe` as your regular Windows user. If Relay can’t find the launcher, select **Choose launcher** and point it to `BsgLauncher.exe`.
+2. Sign in directly in the BSG Launcher and leave it open. In Relay, select **Save current BSG account**, enter a nickname, and save. Repeat for each account you use.
+3. Pick a saved account from the tray, or select it in the window and click **Switch account**. Close the game first. Relay closes and reopens the launcher during the switch.
 
-## Local data
+Relay is for the standalone BSG Launcher. For Steam-linked play, use Steam’s account flow.
 
-The switcher shows nicknames. When you select **Save account**, it reads the BSG Launcher's saved account identifier, usually your email address, and its reusable sign-in session. Account identifiers, sessions, and pending recovery data stay on this PC, protected by Windows DPAPI for the current user under `%LOCALAPPDATA%\TarkovTracker\AccountSwitcher`. The switcher briefly watches the launcher's settings during sign-in and saves newer sessions for known accounts before a switch. Enter your email, password, and verification codes in the BSG Launcher.
+## Security FAQ
 
-Session restoration depends on the launcher's local settings format and whether BSG accepts the saved session. The switcher's status reports process launch. The launcher shows whether sign-in succeeded.
+### Do I enter my email, password, or verification code in Relay?
 
-## Updates
+Relay only asks for a nickname. Enter sign-in details and verification codes directly in the BSG Launcher. When you save an account, Relay reads the launcher’s stored account identifier (usually your email) and reusable session from its local settings.
 
-The Windows x64 switcher checks GitHub on startup. You can also select **Check for updates** in the window or tray menu. When a new version appears, select **Update to v…** to download, verify, and restart. Builds released before the updater need one final manual installation.
+### Where are my saved sessions stored?
 
-Updates install under the switcher's local app-data directory. The new build becomes the default once its window opens and the account vault loads. Continue opening your original switcher shortcut or executable. To start a specific older copy directly for recovery, run its executable with `--skip-update`.
+Relay stores account identifiers, sessions, and pending settings recovery in `%LOCALAPPDATA%\TarkovTracker\AccountSwitcher\vault.dat`. Windows Data Protection API (DPAPI) encrypts the vault for your Windows user. Software running as that user can still access it, so treat the vault and launcher settings as sensitive and keep them out of support posts.
+
+### Does Relay send my account information anywhere?
+
+Relay keeps account data on your PC. It contacts GitHub to check for releases and download updates. Update requests contain no saved nicknames, emails, or session tokens.
+
+### Does it bypass email verification or two-factor authentication?
+
+BSG still controls sign-in and can reject or expire a saved session. If that happens, click **Sign in again** and complete any prompts in the BSG Launcher.
+
+### What does Remove do?
+
+**Remove** deletes Relay’s saved copy. To sign out of BSG, use the launcher.
+
+### What if a switch is interrupted?
+
+Close the launcher and choose **Restore previous settings**. If the launcher has already changed its settings, choose **Keep current settings** to clear the recovery prompt.
+
+### How are updates verified?
+
+Relay checks for releases on startup. You can also select **Check for updates** in the window or tray. If you choose to install an update, Relay checks the download against the SHA-256 digest published by GitHub before installing it.
 
 ## Build and verify
 
@@ -39,6 +62,6 @@ dotnet run --project tests/TarkovAccountSwitcher.Tests -c Release
 dotnet publish src/TarkovAccountSwitcher -c Release -r win-x64 --self-contained false
 ```
 
-The framework-dependent publish requires the .NET 10 Windows Desktop Runtime. The regression tests use synthetic sessions in temporary folders.
+The framework-dependent publish requires the .NET 10 Windows Desktop Runtime. Tests use synthetic sessions in temporary folders. To run a specific older build for recovery, launch it with `--skip-update`.
 
 For releases, publish a self-contained `win-x64` build with `-p:Version=X.Y.Z` matching the tag `vX.Y.Z`. Package the publish folder as the top-level `TarkovAccountSwitcher` folder in `TarkovAccountSwitcher-vX.Y.Z-win-x64.zip`. The updater expects that asset name and GitHub's SHA-256 digest.
