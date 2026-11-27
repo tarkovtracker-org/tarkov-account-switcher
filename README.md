@@ -1,6 +1,8 @@
-# Tarkov Account Switcher
+# Tarkov Relay — Account Switcher
 
-A Windows tray utility for switching between your own standalone Battlestate Games launcher accounts.
+<img src="docs/brand/tarkov-relay-wordmark.svg" alt="Tarkov Relay Account Switcher" width="480">
+
+Tarkov Relay is a Windows tray utility for switching between your own saved standalone Battlestate Games launcher accounts. Save each account once, then switch between sessions from the tray.
 
 ## Use
 

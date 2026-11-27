@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title">
+  <title id="title">Tarkov Relay icon</title>
+  <rect x="8" y="8" width="240" height="240" rx="47" fill="#171b23"/>
+  <rect x="9.5" y="9.5" width="237" height="237" rx="45.5" fill="none" stroke="#66594a" stroke-width="3"/>
+  <path d="M67.56 65.42 A87 87 0 0 1 188.44 65.42 M188.44 190.58 A87 87 0 0 1 67.56 190.58" fill="none" stroke="#756853" stroke-width="8" stroke-linecap="round"/>
+  <path d="M128 25 137 41 128 38 119 41Z M128 231 119 215 128 218 137 215Z" fill="#c0a678"/>
+  <path d="M63 89 153 89 142 78 155 65 192 102 155 139 142 126 153 115 63 115Z" fill="#e1c89c"/>
+  <path d="M193 167 103 167 114 178 101 191 64 154 101 117 114 130 103 141 193 141Z" fill="#c0a678"/>
+</svg>

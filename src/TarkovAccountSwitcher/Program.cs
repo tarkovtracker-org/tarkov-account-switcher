@@ -14,7 +14,7 @@ internal static class Program
         if (new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator))
         {
             MessageBox.Show("Run the account switcher without administrator privileges.",
-                MainForm.AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                AppBrand.Title, MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
 
@@ -25,7 +25,7 @@ internal static class Program
         if (!AcquireInstance(instance, wait))
         {
             MessageBox.Show("The account switcher is already running. Open it from the notification area.",
-                MainForm.AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                AppBrand.Title, MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
 
@@ -36,7 +36,7 @@ internal static class Program
         catch (Exception error) when (SwitchService.IsExpected(error))
         {
             MessageBox.Show("The switcher could not open its local data. Check access to the data folder and try again.",
-                MainForm.AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                AppBrand.Title, MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
         finally
         {

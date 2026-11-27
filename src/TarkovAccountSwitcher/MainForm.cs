@@ -2,7 +2,6 @@ namespace TarkovAccountSwitcher;
 
 internal sealed class MainForm : SwitcherForm
 {
-    internal const string AppTitle = "Tarkov Account Switcher";
     private readonly SwitchService service;
     private readonly string settingsPath;
     private readonly AppUpdates? updates;
@@ -38,7 +37,7 @@ internal sealed class MainForm : SwitcherForm
     private readonly Font headingFont = new("Segoe UI", 21F, FontStyle.Bold);
     private readonly Font accountFont = new("Segoe UI", 10F, FontStyle.Bold);
     private readonly Font bodyFont = new("Segoe UI", 10F);
-    private readonly NotifyIcon tray = new() { Icon = SystemIcons.Application, Text = AppTitle };
+    private readonly NotifyIcon tray = new() { Icon = AppBrand.TrayIcon, Text = AppBrand.Title };
     private readonly ContextMenuStrip menu = new();
     private readonly System.Windows.Forms.Timer capture = new() { Interval = 300 };
     private readonly System.Windows.Forms.Timer expiry = new() { Interval = 300_000 };
@@ -59,8 +58,8 @@ internal sealed class MainForm : SwitcherForm
         this.service = service;
         this.settingsPath = settingsPath;
         this.updates = updates;
-        Text = AppTitle;
-        Icon = SystemIcons.Application;
+        Text = AppBrand.Title;
+        Icon = AppBrand.WindowIcon;
         ClientSize = new Size(680, updates is null ? 465 : 510);
         MinimumSize = new Size(600, updates is null ? 415 : 460);
         StartPosition = FormStartPosition.CenterScreen;
@@ -265,7 +264,7 @@ internal sealed class MainForm : SwitcherForm
     {
         while (menu.Items.Count > 0)
             menu.Items[0].Dispose();
-        menu.Items.Add("Open account switcher", null, (_, _) => ShowWindow());
+        menu.Items.Add($"Open {AppBrand.Name}", null, (_, _) => ShowWindow());
         if (loaded && vault.Pending is null && vault.LauncherPath is not null)
         {
             foreach (var account in vault.Accounts)
@@ -546,7 +545,7 @@ internal sealed class MainForm : SwitcherForm
         Activate();
     }
 
-    private bool Confirm(string message) => MessageBox.Show(this, message, AppTitle, MessageBoxButtons.YesNo,
+    private bool Confirm(string message) => MessageBox.Show(this, message, AppBrand.Title, MessageBoxButtons.YesNo,
         MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) == DialogResult.Yes;
 
     private static string Message(Exception error) => error switch
@@ -588,6 +587,7 @@ internal sealed class MainForm : SwitcherForm
         internal SaveAccountDialog(Func<SwitcherPalette> readPalette, Func<string, Guid> saveAccount) : base(readPalette)
         {
             Text = "Save current BSG account";
+            Icon = AppBrand.WindowIcon;
             ClientSize = new Size(470, 240);
             StartPosition = FormStartPosition.CenterParent;
             FormBorderStyle = FormBorderStyle.FixedDialog;

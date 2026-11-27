@@ -1,6 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <Version>1.0.2</Version>
+    <Product>Tarkov Relay</Product>
+    <AssemblyTitle>Tarkov Relay — Account Switcher</AssemblyTitle>
+    <ApplicationIcon>Assets/TarkovRelay.ico</ApplicationIcon>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
@@ -10,6 +13,7 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
+    <EmbeddedResource Include="Assets/TarkovRelay.ico" LogicalName="TarkovAccountSwitcher.Assets.TarkovRelay.ico" />
     <InternalsVisibleTo Include="TarkovAccountSwitcher.Tests" />
   </ItemGroup>
 </Project>
