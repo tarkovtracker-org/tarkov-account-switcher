@@ -15,6 +15,8 @@ internal interface ILauncher
 
 internal sealed class SwitchService(VaultStore store, LauncherSettings settings, ILauncher launcher)
 {
+    internal const int MaxNicknameLength = 64;
+
     internal Vault Read() => store.Load();
 
     internal Vault ReadWithLauncherDetection(Func<string?> discover)
@@ -42,15 +44,36 @@ internal sealed class SwitchService(VaultStore store, LauncherSettings settings,
         store.Save(Ready() with { LauncherPath = Path.GetFullPath(path) });
     }
 
-    internal Account Add(string label, string email)
+    internal Guid SaveCurrentAccount(string nickname)
     {
-        var vault = Ready();
-        if (vault.Accounts.Any(account => SameEmail(account.Email, email)))
-            throw new InvalidOperationException("This email already has an account.");
+        nickname = nickname.Trim();
+        if (nickname.Length is 0 or > MaxNicknameLength)
+            throw new InvalidOperationException("Enter a nickname of 1 to 64 characters.");
 
-        var account = new Account(Guid.NewGuid(), label, email);
-        store.Save(vault with { Accounts = [.. vault.Accounts, account] });
-        return account;
+        var vault = Ready();
+        var path = vault.LauncherPath ?? throw new InvalidOperationException("Choose the BSG launcher first.");
+        if (!launcher.IsRunning(path))
+            throw new InvalidOperationException("Open the BSG Launcher and sign in before saving.");
+
+        var (login, session) = LauncherSettings.ReadSession(LauncherSettings.Parse(settings.Read()));
+        if (login is null || session is null)
+            throw new InvalidOperationException("Finish signing in through the BSG Launcher, then try again.");
+        if (!launcher.IsRunning(path))
+            throw new InvalidOperationException("Leave the BSG Launcher open while saving the account.");
+
+        var index = Array.FindIndex(vault.Accounts, account => SameEmail(account.Email, login));
+        if (index < 0)
+        {
+            var account = new Account(Guid.NewGuid(), nickname, login, session);
+            store.Save(vault with { Accounts = [.. vault.Accounts, account] });
+            return account.Id;
+        }
+
+        var accounts = (Account[])vault.Accounts.Clone();
+        var existing = accounts[index];
+        accounts[index] = existing with { Label = nickname, Session = session };
+        store.Save(vault with { Accounts = accounts });
+        return existing.Id;
     }
 
     internal void Remove(Guid id)

@@ -8,6 +8,82 @@ WindowsFormsSynchronizationContext.AutoInstall = false;
 
 var tests = new (string Name, Func<Fixture, Task> Run)[]
 {
+    ("Saving the current account requires only a nickname and leaves the launcher alone", async f =>
+    {
+        const string identifier = "new-profile@example.test";
+        f.Write(identifier, "synthetic-session");
+        var original = f.Settings.Read()!;
+        var id = f.Service.SaveCurrentAccount("  Alternate profile  ");
+        var account = f.Service.Read().Accounts.Single(item => item.Id == id);
+        Check(account.Label == "Alternate profile" && account.Email == identifier &&
+            account.Session?.Access == "synthetic-session", "did not save the current launcher profile");
+        Check(original.SequenceEqual(f.Settings.Read()!) && f.Process.Closes == 0 && f.Process.Starts == 0,
+            "saving changed or restarted the launcher");
+        Check(!Encoding.UTF8.GetString(File.ReadAllBytes(f.VaultPath)).Contains(identifier, StringComparison.Ordinal),
+            "account identifier appeared in the vault as plaintext");
+
+        f.Write(f.One.Email, "different-profile");
+        Check(await f.Service.SwitchAsync(id), "could not switch back to the captured account");
+        var restored = LauncherSettings.Parse(f.Settings.Read());
+        Check((string?)restored["login"] == identifier && (string?)restored["at"] == "synthetic-session",
+            "switch did not restore the captured account");
+    }),
+    ("Saving an existing account changes its nickname and session in place", f =>
+    {
+        f.Write("ONE@example.test", "fresh");
+        var id = f.Service.SaveCurrentAccount("Renamed");
+        var accounts = f.Store.Load().Accounts;
+        Check(id == f.One.Id && accounts.Length == 2 && accounts[0].Id == f.One.Id && accounts[1] == f.Two,
+            "existing account was replaced, duplicated, or reordered");
+        Check(accounts[0].Label == "Renamed" && accounts[0].Session?.Access == "fresh",
+            "account nickname or session wasn't refreshed");
+        return Task.CompletedTask;
+    }),
+    ("Saving requires a complete sign-in from the configured running launcher", async f =>
+    {
+        var vault = File.ReadAllBytes(f.VaultPath);
+        File.WriteAllText(f.Settings.Path, new JsonObject { ["login"] = f.One.Email }.ToJsonString());
+        await Reject(() => { f.Service.SaveCurrentAccount("Incomplete"); return Task.CompletedTask; });
+
+        f.Process.Running = false;
+        File.WriteAllText(f.Settings.Path, "{unreadable");
+        try
+        {
+            f.Service.SaveCurrentAccount("Closed");
+            throw new Exception("accepted a closed launcher");
+        }
+        catch (InvalidOperationException error) when (error.Message.StartsWith("Open the BSG Launcher", StringComparison.Ordinal))
+        {
+            // Reject the closed launcher before trying to interpret its settings.
+        }
+
+        f.Write(f.One.Email, "previous");
+        f.Process.OnIsRunning = path =>
+        {
+            Check(path == f.Service.Read().LauncherPath, "checked the wrong installation");
+            throw new InvalidOperationException("A different launcher is running.");
+        };
+        await Reject(() => { f.Service.SaveCurrentAccount("Other launcher"); return Task.CompletedTask; });
+        Check(vault.SequenceEqual(File.ReadAllBytes(f.VaultPath)), "rejected saves changed the vault");
+    }),
+    ("Saving refuses a launcher that exits during capture", async f =>
+    {
+        f.Write(f.One.Email, "previous");
+        var vault = File.ReadAllBytes(f.VaultPath);
+        var checks = 0;
+        f.Process.OnIsRunning = _ => ++checks == 1;
+        await Reject(() => { f.Service.SaveCurrentAccount("Closed during save"); return Task.CompletedTask; });
+        Check(checks == 2 && vault.SequenceEqual(File.ReadAllBytes(f.VaultPath)), "saved after the launcher exited");
+    }),
+    ("Saving requires a nickname and leaves pending recovery intact", async f =>
+    {
+        f.Write(f.One.Email, "valid");
+        await Reject(() => { f.Service.SaveCurrentAccount("  "); return Task.CompletedTask; });
+        f.Journal(f.Settings.Read());
+        var vault = File.ReadAllBytes(f.VaultPath);
+        await Reject(() => { f.Service.SaveCurrentAccount("Pending"); return Task.CompletedTask; });
+        Check(vault.SequenceEqual(File.ReadAllBytes(f.VaultPath)), "saving changed pending recovery");
+    }),
     ("An open window follows both system theme changes", _ =>
     {
         Exception? failure = null;
@@ -291,8 +367,9 @@ internal sealed class Fixture : IDisposable
         Settings = new LauncherSettings(Path.Combine(directory, "settings"));
         Service = new SwitchService(Store, Settings, Process);
         Service.SetPath(Path.Combine(directory, "BsgLauncher.exe"));
-        One = Service.Add("One", "one@example.test");
-        Two = Service.Add("Two", "two@example.test");
+        One = new Account(Guid.NewGuid(), "One", "one@example.test");
+        Two = new Account(Guid.NewGuid(), "Two", "two@example.test");
+        Store.Save(Store.Load() with { Accounts = [One, Two] });
     }
 
     internal void Write(string email, string token)
@@ -319,6 +396,7 @@ internal sealed class FakeLauncher : ILauncher
     internal Action? OnValidate { get; set; }
     internal Action? OnClose { get; set; }
     internal Action? OnStart { get; set; }
+    internal Func<string, bool>? OnIsRunning { get; set; }
     internal Action<int>? OnEnsureStopped { get; set; }
     internal int Starts { get; private set; }
     internal int Closes { get; private set; }
@@ -326,7 +404,7 @@ internal sealed class FakeLauncher : ILauncher
     private int stoppedChecks;
 
     public void ValidatePath(string path) => OnValidate?.Invoke();
-    public bool IsRunning(string path) => Running;
+    public bool IsRunning(string path) => OnIsRunning?.Invoke(path) ?? Running;
     public void EnsureStopped() => OnEnsureStopped?.Invoke(++stoppedChecks);
 
     public Task CloseAsync(string path)

@@ -1,5 +1,3 @@
-using System.Net.Mail;
-
 namespace TarkovAccountSwitcher;
 
 internal sealed class MainForm : SwitcherForm
@@ -23,7 +21,7 @@ internal sealed class MainForm : SwitcherForm
     private readonly Label status = new() { AutoSize = true, Dock = DockStyle.Fill, AccessibleName = "Switch status" };
     private readonly SwitcherButton choose = SwitcherStyle.Button("Choose launcher…");
     private readonly SwitcherButton switchAccount = SwitcherStyle.Button("Switch account", primary: true);
-    private readonly SwitcherButton add = SwitcherStyle.Button("Add account…");
+    private readonly SwitcherButton saveCurrent = SwitcherStyle.Button("Save current BSG account…");
     private readonly SwitcherButton signIn = SwitcherStyle.Button("Sign in again");
     private readonly SwitcherButton remove = SwitcherStyle.Button("Remove…");
     private readonly SwitcherButton restore = SwitcherStyle.Button("Restore previous settings", primary: true);
@@ -78,7 +76,7 @@ internal sealed class MainForm : SwitcherForm
 
         choose.Click += (_, _) => ChooseLauncher();
         updateButton.Click += async (_, _) => await UpdateAction();
-        add.Click += async (_, _) => await AddAccount();
+        saveCurrent.Click += (_, _) => SaveCurrentAccount();
         remove.Click += (_, _) => RemoveAccount();
         switchAccount.Click += async (_, _) => await SwitchSelected();
         accounts.DoubleClick += async (_, _) => await SwitchSelected();
@@ -130,9 +128,9 @@ internal sealed class MainForm : SwitcherForm
         {
             Text = "Accounts", Font = headingFont, AutoSize = true, Anchor = AnchorStyles.Left, Margin = Padding.Empty
         };
-        layout.Controls.Add(SwitcherStyle.Split(title, add, new Padding(0, 0, 0, 15)), 0, 0);
+        layout.Controls.Add(SwitcherStyle.Split(title, saveCurrent, new Padding(0, 0, 0, 15)), 0, 0);
 
-        emptyAccounts.Text = "No saved accounts. Select Add account to get started.";
+        emptyAccounts.Text = "Sign in through the BSG Launcher, then save your current account.";
         emptyAccounts.Padding = new Padding(14);
         cardContent.Controls.Add(accounts);
         cardContent.Controls.Add(emptyAccounts);
@@ -179,7 +177,7 @@ internal sealed class MainForm : SwitcherForm
         accounts.ForeColor = Palette.Text;
         emptyAccounts.ForeColor = path.ForeColor = updateStatus.ForeColor = Palette.SecondaryText;
         status.BackColor = Palette.Info;
-        foreach (var button in new[] { choose, switchAccount, add, signIn, remove, restore, keep, updateButton })
+        foreach (var button in new[] { choose, switchAccount, saveCurrent, signIn, remove, restore, keep, updateButton })
             button.ApplyPalette(Palette);
         SwitcherStyle.StyleMenu(menu, Palette);
     }
@@ -253,8 +251,9 @@ internal sealed class MainForm : SwitcherForm
     {
         var recovery = vault.Pending is not null;
         var ready = loaded && !busy && !recovery;
-        choose.Enabled = add.Enabled = ready;
-        switchAccount.Enabled = signIn.Enabled = ready && vault.LauncherPath is not null && Selected is not null;
+        choose.Enabled = ready;
+        saveCurrent.Enabled = ready && vault.LauncherPath is not null;
+        switchAccount.Enabled = signIn.Enabled = saveCurrent.Enabled && Selected is not null;
         remove.Enabled = ready && Selected is not null;
         switchAccount.Visible = signIn.Visible = remove.Visible = !recovery;
         restore.Visible = keep.Visible = recovery;
@@ -393,19 +392,19 @@ internal sealed class MainForm : SwitcherForm
         Edit(() => service.SetPath(dialog.FileName), "Launcher location saved.");
     }
 
-    private async Task AddAccount()
+    private void SaveCurrentAccount()
     {
-        using var dialog = new AccountDialog(ReadPalette);
-        if (dialog.ShowDialog(this) != DialogResult.OK || busy)
-            return;
-
-        Account? account = null;
-        Edit(() => account = service.Add(dialog.AccountName, dialog.Email), "Account added.");
-        if (account is null)
-            return;
-        RefreshView(account.Id);
-        if (vault.LauncherPath is not null)
-            await SwitchAccount(account.Id);
+        using var dialog = new SaveAccountDialog(ReadPalette, nickname =>
+        {
+            if (busy)
+                throw new InvalidOperationException("Wait for the current operation to finish, then try again.");
+            return service.SaveCurrentAccount(nickname);
+        });
+        if (dialog.ShowDialog(this) == DialogResult.OK && dialog.SavedAccountId is { } id)
+        {
+            status.Text = "Account saved.";
+            RefreshView(id);
+        }
     }
 
     private void RemoveAccount()
@@ -574,55 +573,69 @@ internal sealed class MainForm : SwitcherForm
         base.Dispose(disposing);
     }
 
-    private sealed class AccountDialog : SwitcherForm
+    private sealed class SaveAccountDialog : SwitcherForm
     {
-        private readonly TextBox label = new() { Dock = DockStyle.Fill, MaxLength = 64, AccessibleName = "Account name" };
-        private readonly TextBox email = new() { Dock = DockStyle.Fill, MaxLength = 254, AccessibleName = "Account email" };
-        private readonly SwitcherButton save = SwitcherStyle.Button("Add account", primary: true);
+        private readonly TextBox nickname = new()
+        {
+            Dock = DockStyle.Fill, MaxLength = SwitchService.MaxNicknameLength, AccessibleName = "Account nickname"
+        };
+        private readonly Label error = new() { AutoSize = true, Visible = false, Margin = new Padding(0, 10, 0, 0) };
+        private readonly SwitcherButton save = SwitcherStyle.Button("Save account", primary: true);
         private readonly SwitcherButton cancel = SwitcherStyle.Button("Cancel");
 
-        internal string AccountName => label.Text.Trim();
-        internal string Email => email.Text.Trim();
+        internal Guid? SavedAccountId { get; private set; }
 
-        internal AccountDialog(Func<SwitcherPalette> readPalette) : base(readPalette)
+        internal SaveAccountDialog(Func<SwitcherPalette> readPalette, Func<string, Guid> saveAccount) : base(readPalette)
         {
-            Text = "Add a Tarkov account";
-            ClientSize = new Size(430, 220);
+            Text = "Save current BSG account";
+            ClientSize = new Size(470, 240);
             StartPosition = FormStartPosition.CenterParent;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MinimizeBox = MaximizeBox = false;
             ShowInTaskbar = false;
             AutoScaleMode = AutoScaleMode.Dpi;
             cancel.DialogResult = DialogResult.Cancel;
-            var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(20), ColumnCount = 1 };
-            label.Margin = new Padding(0, 5, 0, 14);
-            email.Margin = new Padding(0, 5, 0, 16);
-            layout.Controls.Add(new Label { Text = "Account name", AutoSize = true, Margin = Padding.Empty });
-            layout.Controls.Add(label);
-            layout.Controls.Add(new Label { Text = "BSG account email", AutoSize = true, Margin = Padding.Empty });
-            layout.Controls.Add(email);
+            var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(20), ColumnCount = 1, RowCount = 6 };
+            for (var row = 0; row < 5; row++)
+                layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            var description = new Label
+            {
+                Text = "Sign in directly in the BSG Launcher and leave it open. This saves your current launcher session on this PC so you can switch back later.",
+                AutoSize = true, MaximumSize = new Size(430, 0), Margin = new Padding(0, 0, 0, 16)
+            };
+            error.MaximumSize = description.MaximumSize;
+            nickname.Margin = new Padding(0, 5, 0, 16);
+            layout.Controls.Add(description);
+            layout.Controls.Add(new Label { Text = "Nickname", AutoSize = true, Margin = Padding.Empty });
+            layout.Controls.Add(nickname);
             layout.Controls.Add(SwitcherStyle.ButtonRow(save, cancel));
+            layout.Controls.Add(error);
             Controls.Add(layout);
             ApplyPalette();
             AcceptButton = save;
             CancelButton = cancel;
+            ActiveControl = nickname;
             save.Click += (_, _) =>
             {
-                if (AccountName.Length == 0 || !MailAddress.TryCreate(Email, out var address) || address.Address != Email)
+                try
                 {
-                    MessageBox.Show(this, "Enter a name and a valid BSG account email.", Text,
-                        MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    return;
+                    SavedAccountId = saveAccount(nickname.Text);
+                    DialogResult = DialogResult.OK;
                 }
-                DialogResult = DialogResult.OK;
+                catch (Exception failure) when (SwitchService.IsExpected(failure))
+                {
+                    error.Text = Message(failure);
+                    error.Visible = true;
+                }
             };
         }
 
         protected override void ApplyPalette()
         {
             base.ApplyPalette();
-            label.BackColor = email.BackColor = Palette.Surface;
-            label.ForeColor = email.ForeColor = Palette.Text;
+            nickname.BackColor = Palette.Surface;
+            nickname.ForeColor = Palette.Text;
             save.ApplyPalette(Palette);
             cancel.ApplyPalette(Palette);
         }

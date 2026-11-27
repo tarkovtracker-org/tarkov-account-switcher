@@ -7,7 +7,7 @@ A Windows tray utility for switching between your own standalone Battlestate Gam
 The switcher follows the Windows app color preference and respects Windows contrast themes.
 
 1. Open the switcher as a standard Windows user. It detects the standalone BSG launcher from its Windows installation entry. If it cannot find one, choose your installed `BsgLauncher.exe`.
-2. Add an account by name and email. Sign in directly in the BSG launcher.
+2. Sign in directly in the BSG Launcher and leave it open. In the switcher, select **Save current BSG account**, enter a nickname, and save. For another account, sign in to it in the BSG Launcher first, then repeat.
 3. Click an account in the switcher's tray menu to switch. In the main window, double-click an account or use **Switch account**.
 4. Use **Sign in again** if the launcher rejects a saved session. If the switcher asks you to close the launcher, exit it from its tray menu and retry.
 
@@ -17,7 +17,7 @@ The switcher preserves unrelated launcher settings and leaves game caches in pla
 
 ## Local data
 
-Account details, saved sessions, and pending recovery data are protected by Windows DPAPI for the current user and stored under `%LOCALAPPDATA%\TarkovTracker\AccountSwitcher`. The BSG launcher still owns its original settings file. The switcher briefly watches that file during sign-in and can save newer sessions for known accounts before a switch. Keep account passwords and authentication prompts inside the launcher.
+The switcher shows nicknames. When you select **Save account**, it reads the BSG Launcher's saved account identifier, usually your email address, and its reusable sign-in session. Account identifiers, sessions, and pending recovery data stay on this PC, protected by Windows DPAPI for the current user under `%LOCALAPPDATA%\TarkovTracker\AccountSwitcher`. The switcher briefly watches the launcher's settings during sign-in and saves newer sessions for known accounts before a switch. Enter your email, password, and verification codes in the BSG Launcher.
 
 Session restoration depends on the launcher's local settings format and whether BSG accepts the saved session. The switcher's status reports process launch. The launcher shows whether sign-in succeeded.
 
