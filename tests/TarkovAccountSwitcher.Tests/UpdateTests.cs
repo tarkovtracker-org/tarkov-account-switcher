@@ -11,6 +11,7 @@ internal static class UpdateTests
     internal static IEnumerable<(string Name, Func<Fixture, Task> Run)> Cases =>
     [
         ("Updater only accepts a newer stable release with a verified Windows asset", CheckReleases),
+        ("Updater uses the stable GitHub repository ID and accepts both names", CheckRenamedRepository),
         ("Updater rejects redirects outside the GitHub release hosts", RejectRedirect),
         ("Updater rejects a wrong digest and a truncated download", RejectBadDownloads),
         ("Updater rejects an archive entry outside the release folder", RejectOutsideEntry),
@@ -52,6 +53,32 @@ internal static class UpdateTests
         }));
         await Reject(() => github.DownloadAsync(release, Path.Combine(Root(fixture), "redirect.zip"), default));
         Require(requests == 1, "followed an untrusted redirect");
+    }
+
+    private static async Task CheckRenamedRepository(Fixture fixture)
+    {
+        const string renamed = "https://github.com/tarkovtracker-org/tarkov-relay";
+        var release = Release(new Version(1, 0, 5), [9, 2, 3]);
+        var renamedUrl = release.Download.AbsoluteUri.Replace(Repository, renamed, StringComparison.Ordinal);
+        var assetUrl = release.Download.AbsoluteUri;
+        using var github = new GitHubUpdates(new ScriptedHttp(request =>
+        {
+            Require(request.RequestUri?.AbsoluteUri == "https://api.github.com/repositories/1474782388/releases/latest",
+                "release discovery depends on the repository name");
+            return Metadata(release, overrideUrl: assetUrl);
+        }));
+        var current = new Version(1, 0, 4);
+        Require((await github.CheckAsync(current, default))?.Download == release.Download,
+            "rejected the original download URL");
+        assetUrl = renamedUrl;
+        Require((await github.CheckAsync(current, default))?.Download.AbsoluteUri == renamedUrl,
+            "rejected the renamed download URL");
+        assetUrl = renamedUrl.Replace(renamed, "https://github.com/another-owner/tarkov-relay", StringComparison.Ordinal);
+        await Reject(() => github.CheckAsync(current, default));
+        assetUrl = renamedUrl.Replace("/download/v1.0.5/", "/download/v1.0.4/", StringComparison.Ordinal);
+        await Reject(() => github.CheckAsync(current, default));
+        assetUrl = renamedUrl + "?unexpected=1";
+        await Reject(() => github.CheckAsync(current, default));
     }
 
     private static async Task RejectBadDownloads(Fixture fixture)
