@@ -5,6 +5,15 @@ using TarkovAccountSwitcher;
 
 var tests = new (string Name, Func<Fixture, Task> Run)[]
 {
+    ("Account row height remains valid at 500 percent scaling", _ =>
+    {
+        using var list = new ListBox { DrawMode = DrawMode.OwnerDrawFixed };
+        SwitcherStyle.SetAccountRowHeight(list, 54);
+        Check(list.ItemHeight == 54, "changed normal row height");
+        SwitcherStyle.SetAccountRowHeight(list, 270);
+        Check(list.ItemHeight == 255, "did not preserve the largest valid height");
+        return Task.CompletedTask;
+    }),
     ("Detects an unconfigured launcher once and preserves an explicit path", f =>
     {
         f.Store.Save(f.Store.Load() with { LauncherPath = null });

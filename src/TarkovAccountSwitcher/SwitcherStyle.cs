@@ -26,6 +26,9 @@ internal static class SwitcherStyle
     internal static Color StatusText(bool saved, bool selected) =>
         HighContrast ? RowText(selected) : saved ? SavedText : SignInText;
 
+    internal static void SetAccountRowHeight(ListBox list, int scaledPixels) =>
+        list.ItemHeight = Math.Min(scaledPixels, 255);
+
     internal static Button Button(string text, bool primary = false)
     {
         var button = new Button

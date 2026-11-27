@@ -57,8 +57,8 @@ internal sealed class MainForm : Form
         Controls.Add(BuildLayout());
 
         accounts.DrawItem += DrawAccount;
-        accounts.ItemHeight = Pixels(54);
-        DpiChanged += (_, _) => accounts.ItemHeight = Pixels(54);
+        SwitcherStyle.SetAccountRowHeight(accounts, Pixels(54));
+        DpiChanged += (_, _) => SwitcherStyle.SetAccountRowHeight(accounts, Pixels(54));
         AcceptButton = switchAccount;
 
         choose.Click += (_, _) => ChooseLauncher();
@@ -163,7 +163,9 @@ internal sealed class MainForm : Form
         var selected = (e.State & DrawItemState.Selected) != 0;
         e.Graphics.FillRectangle(selected ? SwitcherStyle.SelectionBrush : SwitcherStyle.SurfaceBrush, e.Bounds);
         var inset = Pixels(14);
-        var pill = new Rectangle(e.Bounds.Right - inset - Pixels(116), e.Bounds.Y + Pixels(14), Pixels(116), Pixels(26));
+        var pillHeight = Pixels(26);
+        var pill = new Rectangle(e.Bounds.Right - inset - Pixels(116),
+            e.Bounds.Y + (e.Bounds.Height - pillHeight) / 2, Pixels(116), pillHeight);
         var name = new Rectangle(e.Bounds.X + inset, e.Bounds.Y,
             Math.Max(0, pill.Left - e.Bounds.X - (inset * 2)), e.Bounds.Height);
         const TextFormatFlags rowText = TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine
