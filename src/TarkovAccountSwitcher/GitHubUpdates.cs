@@ -12,7 +12,10 @@ internal sealed record UpdateRelease(Version Version, Uri Download, long Bytes, 
 
 internal sealed class GitHubUpdates : IDisposable
 {
-    private const string Repository = "tarkovtracker-org/tarkov-account-switcher";
+    // GitHub's repository ID survives a rename. The release asset URL uses the current name.
+    private const string LatestRelease = "https://api.github.com/repositories/1474782388/releases/latest";
+    private const string PreviousRepository = "https://github.com/tarkovtracker-org/tarkov-account-switcher";
+    private const string Repository = "https://github.com/tarkovtracker-org/tarkov-relay";
     private const long MaxDownloadBytes = 200L * 1024 * 1024;
     private const int MaxMetadataBytes = 512 * 1024;
     private readonly HttpClient http;
@@ -32,7 +35,7 @@ internal sealed class GitHubUpdates : IDisposable
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
         timeout.CancelAfter(TimeSpan.FromSeconds(15));
-        using var response = await http.GetAsync($"https://api.github.com/repos/{Repository}/releases/latest",
+        using var response = await http.GetAsync(LatestRelease,
             HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
         if (response.StatusCode == HttpStatusCode.NotFound)
             return null;
@@ -46,14 +49,15 @@ internal sealed class GitHubUpdates : IDisposable
             return null;
 
         var name = $"TarkovAccountSwitcher-{release.Tag}-win-x64.zip";
-        var download = new Uri($"https://github.com/{Repository}/releases/download/{release.Tag}/{name}");
+        var path = $"/releases/download/{release.Tag}/{name}";
         var asset = release.Assets?.FirstOrDefault(asset => asset.Name == name && asset.State == "uploaded");
-        if (asset is null || asset.Size is <= 0 or > MaxDownloadBytes || asset.Download != download.AbsoluteUri ||
+        if (asset is null || asset.Size is <= 0 or > MaxDownloadBytes ||
+            (asset.Download != Repository + path && asset.Download != PreviousRepository + path) ||
             asset.Digest is not { Length: 71 } digest || !digest.StartsWith("sha256:", StringComparison.Ordinal) ||
             !digest.AsSpan(7).ContainsOnlyHex())
             throw new InvalidDataException("The release is missing a verifiable Windows x64 ZIP.");
 
-        return new UpdateRelease(version, download, asset.Size, Convert.FromHexString(digest.AsSpan(7)));
+        return new UpdateRelease(version, new Uri(asset.Download), asset.Size, Convert.FromHexString(digest.AsSpan(7)));
     }
 
     internal async Task DownloadAsync(UpdateRelease release, string destination, CancellationToken cancellation)
