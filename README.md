@@ -6,6 +6,8 @@ Tarkov Relay is an independent Windows tray app for switching between your own s
 
 [Download for Windows x64](https://github.com/tarkovtracker-org/tarkov-account-switcher/releases/latest)
 
+![Tarkov Relay with two demo accounts. Main profile is marked Active, and Alternate profile has a saved session.](docs/screenshots/tarkov-relay-accounts.png)
+
 ## Features
 
 - **One-click switching** from the system tray, with an **Active** badge when Relay can identify the current account. Switching to that account is disabled.
