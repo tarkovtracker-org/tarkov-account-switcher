@@ -5,6 +5,37 @@ using TarkovAccountSwitcher;
 
 var tests = new (string Name, Func<Fixture, Task> Run)[]
 {
+    ("Detects an unconfigured launcher once and preserves an explicit path", f =>
+    {
+        f.Store.Save(f.Store.Load() with { LauncherPath = null });
+        Check(f.Service.ReadWithLauncherDetection(() => null).LauncherPath is null, "guessed a missing launcher");
+        var detected = Path.Combine(Path.GetDirectoryName(f.Settings.Path)!, "BsgLauncher.exe");
+        Check(f.Service.ReadWithLauncherDetection(() => detected).LauncherPath == detected, "launcher was not detected");
+        Check(f.Service.Read().LauncherPath == detected, "detected path was not saved");
+        var explicitPath = Path.Combine(Path.GetDirectoryName(f.Settings.Path)!, "custom", "BsgLauncher.exe");
+        f.Service.SetPath(explicitPath);
+        Check(f.Service.ReadWithLauncherDetection(() => throw new Exception("discovery reran")).LauncherPath == explicitPath,
+            "changed the explicit path");
+        return Task.CompletedTask;
+    }),
+    ("Detection leaves pending settings recovery untouched", f =>
+    {
+        f.Store.Save(f.Store.Load() with { LauncherPath = null, Pending = new Recovery(Guid.NewGuid(), null, []) });
+        var result = f.Service.ReadWithLauncherDetection(() => throw new Exception("discovery ran during recovery"));
+        Check(result.LauncherPath is null && result.Pending is not null, "altered pending recovery");
+        return Task.CompletedTask;
+    }),
+    ("Manual selection remains available when the detected launcher disappears", f =>
+    {
+        f.Store.Save(f.Store.Load() with { LauncherPath = null });
+        f.Process.OnValidate = () => throw new InvalidOperationException("Installation no longer exists");
+        Check(f.Service.ReadWithLauncherDetection(() => "vanished").LauncherPath is null,
+            "accepted a stale installation");
+        f.Process.OnValidate = null;
+        f.Service.SetPath(Path.Combine(Path.GetDirectoryName(f.Settings.Path)!, "BsgLauncher.exe"));
+        Check(f.Service.Read().LauncherPath is not null, "manual selection did not save");
+        return Task.CompletedTask;
+    }),
     ("Closes before capturing, restores the requested session, preserves extra settings", async f =>
     {
         f.Write("one@example.test", "obsolete");
@@ -218,6 +249,7 @@ internal sealed class Fixture : IDisposable
 
 internal sealed class FakeLauncher : ILauncher
 {
+    internal Action? OnValidate { get; set; }
     internal Action? OnClose { get; set; }
     internal Action? OnStart { get; set; }
     internal Action<int>? OnEnsureStopped { get; set; }
@@ -226,7 +258,7 @@ internal sealed class FakeLauncher : ILauncher
     internal bool Running { get; set; } = true;
     private int stoppedChecks;
 
-    public void ValidatePath(string path) { }
+    public void ValidatePath(string path) => OnValidate?.Invoke();
     public bool IsRunning(string path) => Running;
     public void EnsureStopped() => OnEnsureStopped?.Invoke(++stoppedChecks);
 

@@ -17,6 +17,25 @@ internal sealed class SwitchService(VaultStore store, LauncherSettings settings,
 {
     internal Vault Read() => store.Load();
 
+    internal Vault ReadWithLauncherDetection(Func<string?> discover)
+    {
+        var vault = Read();
+        if (vault.LauncherPath is not null || vault.Pending is not null || discover() is not { } path)
+            return vault;
+
+        try
+        {
+            launcher.ValidatePath(path);
+        }
+        catch (InvalidOperationException)
+        {
+            return vault;
+        }
+        var configured = vault with { LauncherPath = path };
+        store.Save(configured);
+        return configured;
+    }
+
     internal void SetPath(string path)
     {
         launcher.ValidatePath(path);

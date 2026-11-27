@@ -7,7 +7,7 @@ namespace TarkovAccountSwitcher;
 
 internal sealed class WindowsLauncher : ILauncher
 {
-    private const string Executable = "BsgLauncher.exe";
+    internal const string Executable = "BsgLauncher.exe";
     private static readonly TimeSpan ExitTimeout = TimeSpan.FromSeconds(8);
     private readonly int sessionId = Process.GetCurrentProcess().SessionId;
 

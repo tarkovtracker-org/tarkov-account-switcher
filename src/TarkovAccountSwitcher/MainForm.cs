@@ -7,16 +7,28 @@ internal sealed class MainForm : Form
     internal const string AppTitle = "Tarkov Account Switcher";
     private readonly SwitchService service;
     private readonly string settingsPath;
-    private readonly ListBox accounts = new() { Dock = DockStyle.Fill, AccessibleName = "Saved accounts" };
-    private readonly Label path = new() { AutoSize = true, Dock = DockStyle.Fill, AutoEllipsis = true };
+    private readonly ListBox accounts = new()
+    {
+        Dock = DockStyle.Fill, AccessibleName = "Saved accounts", BorderStyle = BorderStyle.None,
+        IntegralHeight = false, DrawMode = DrawMode.OwnerDrawFixed, Margin = Padding.Empty
+    };
+    private readonly Label emptyAccounts = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter };
+    private readonly Label path = new()
+    {
+        Anchor = AnchorStyles.Left | AnchorStyles.Right, Height = 22, AutoEllipsis = true,
+        TextAlign = ContentAlignment.MiddleLeft
+    };
     private readonly Label status = new() { AutoSize = true, Dock = DockStyle.Fill, AccessibleName = "Switch status" };
-    private readonly Button choose = new() { Text = "Choose launcher…", AutoSize = true };
-    private readonly Button switchAccount = new() { Text = "Switch account", AutoSize = true };
-    private readonly Button add = new() { Text = "Add account…", AutoSize = true };
-    private readonly Button signIn = new() { Text = "Sign in again", AutoSize = true };
-    private readonly Button remove = new() { Text = "Remove…", AutoSize = true };
-    private readonly Button restore = new() { Text = "Restore previous settings", AutoSize = true };
-    private readonly Button keep = new() { Text = "Keep current settings…", AutoSize = true };
+    private readonly Button choose = SwitcherStyle.Button("Choose launcher…");
+    private readonly Button switchAccount = SwitcherStyle.Button("Switch account", primary: true);
+    private readonly Button add = SwitcherStyle.Button("Add account…");
+    private readonly Button signIn = SwitcherStyle.Button("Sign in again");
+    private readonly Button remove = SwitcherStyle.Button("Remove…");
+    private readonly Button restore = SwitcherStyle.Button("Restore previous settings", primary: true);
+    private readonly Button keep = SwitcherStyle.Button("Keep current settings…");
+    private readonly Font headingFont = new("Segoe UI", 21F, FontStyle.Bold);
+    private readonly Font accountFont = new("Segoe UI", 10F, FontStyle.Bold);
+    private readonly Font bodyFont = new("Segoe UI", 10F);
     private readonly NotifyIcon tray = new() { Icon = SystemIcons.Application, Text = AppTitle };
     private readonly ContextMenuStrip menu = new();
     private readonly System.Windows.Forms.Timer capture = new() { Interval = 300 };
@@ -35,23 +47,19 @@ internal sealed class MainForm : Form
         this.settingsPath = settingsPath;
         Text = AppTitle;
         Icon = SystemIcons.Application;
-        ClientSize = new Size(620, 400);
-        MinimumSize = new Size(570, 360);
+        ClientSize = new Size(680, 465);
+        MinimumSize = new Size(600, 415);
         StartPosition = FormStartPosition.CenterScreen;
         AutoScaleMode = AutoScaleMode.Dpi;
+        BackColor = SwitcherStyle.Canvas;
+        ForeColor = SwitcherStyle.Text;
+        Font = bodyFont;
+        Controls.Add(BuildLayout());
 
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(16), ColumnCount = 1, RowCount = 5 };
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.Controls.Add(path, 0, 0);
-        layout.Controls.Add(ButtonRow(choose), 0, 1);
-        layout.Controls.Add(accounts, 0, 2);
-        layout.Controls.Add(ButtonRow(switchAccount, add, signIn, remove, restore, keep), 0, 3);
-        layout.Controls.Add(status, 0, 4);
-        Controls.Add(layout);
+        accounts.DrawItem += DrawAccount;
+        accounts.ItemHeight = Pixels(54);
+        DpiChanged += (_, _) => accounts.ItemHeight = Pixels(54);
+        AcceptButton = switchAccount;
 
         choose.Click += (_, _) => ChooseLauncher();
         add.Click += async (_, _) => await AddAccount();
@@ -88,12 +96,97 @@ internal sealed class MainForm : Form
 
     private Account? Selected => accounts.SelectedItem as Account;
 
+    private Control BuildLayout()
+    {
+        var layout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill, Padding = new Padding(24, 20, 24, 18), ColumnCount = 1, RowCount = 4
+        };
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+        var title = new Label
+        {
+            Text = "Accounts", Font = headingFont, AutoSize = true, Anchor = AnchorStyles.Left, Margin = Padding.Empty
+        };
+        layout.Controls.Add(SwitcherStyle.Split(title, add, new Padding(0, 0, 0, 15)), 0, 0);
+
+        var card = new Panel { Dock = DockStyle.Fill, BackColor = SwitcherStyle.Border, Margin = Padding.Empty, Padding = new Padding(1) };
+        var cardContent = new Panel { Dock = DockStyle.Fill, BackColor = SwitcherStyle.Surface };
+        accounts.BackColor = SwitcherStyle.Surface;
+        emptyAccounts.Text = "No saved accounts. Select Add account to get started.";
+        emptyAccounts.ForeColor = SwitcherStyle.SecondaryText;
+        emptyAccounts.Padding = new Padding(14);
+        cardContent.Controls.Add(accounts);
+        cardContent.Controls.Add(emptyAccounts);
+        card.Controls.Add(cardContent);
+        layout.Controls.Add(card, 0, 1);
+
+        var actions = SwitcherStyle.ButtonRow(switchAccount, signIn, remove, restore, keep);
+        actions.Margin = new Padding(0, 12, 0, 12);
+        layout.Controls.Add(actions, 0, 2);
+
+        var footer = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, AutoSize = true, Margin = Padding.Empty };
+        footer.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        footer.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        footer.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+        status.Margin = new Padding(0, 0, 0, 8);
+        status.Padding = new Padding(10, 7, 10, 7);
+        status.BackColor = SwitcherStyle.Info;
+        status.Visible = false;
+        status.TextChanged += (_, _) =>
+        {
+            status.AccessibleName = status.Text;
+            status.Visible = status.Text.Length > 0;
+        };
+        footer.SizeChanged += (_, _) => status.MaximumSize = new Size(footer.ClientSize.Width, 0);
+        footer.Controls.Add(status, 0, 0);
+        footer.Controls.Add(new Panel
+        {
+            Height = 1, Dock = DockStyle.Fill, BackColor = SwitcherStyle.Border, Margin = new Padding(0, 0, 0, 8)
+        }, 0, 1);
+        path.ForeColor = SwitcherStyle.SecondaryText;
+        path.Margin = new Padding(0, 0, 10, 0);
+        footer.Controls.Add(SwitcherStyle.Split(path, choose, Padding.Empty), 0, 2);
+        layout.Controls.Add(footer, 0, 3);
+        return layout;
+    }
+
+    private void DrawAccount(object? sender, DrawItemEventArgs e)
+    {
+        if (e.Index < 0 || accounts.Items[e.Index] is not Account account)
+            return;
+
+        var selected = (e.State & DrawItemState.Selected) != 0;
+        e.Graphics.FillRectangle(selected ? SwitcherStyle.SelectionBrush : SwitcherStyle.SurfaceBrush, e.Bounds);
+        var inset = Pixels(14);
+        var pill = new Rectangle(e.Bounds.Right - inset - Pixels(116), e.Bounds.Y + Pixels(14), Pixels(116), Pixels(26));
+        var name = new Rectangle(e.Bounds.X + inset, e.Bounds.Y,
+            Math.Max(0, pill.Left - e.Bounds.X - (inset * 2)), e.Bounds.Height);
+        const TextFormatFlags rowText = TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine
+            | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix;
+        TextRenderer.DrawText(e.Graphics, account.Label, accountFont, name, SwitcherStyle.RowText(selected), rowText);
+
+        var saved = account.Session is not null;
+        e.Graphics.FillRectangle(SwitcherStyle.StatusBrush(saved, selected), pill);
+        TextRenderer.DrawText(e.Graphics, saved ? "Session saved" : "Sign-in required", bodyFont, pill,
+            SwitcherStyle.StatusText(saved, selected), rowText | TextFormatFlags.HorizontalCenter);
+        e.Graphics.DrawLine(SwitcherStyle.BorderPen, e.Bounds.Left, e.Bounds.Bottom - 1, e.Bounds.Right, e.Bounds.Bottom - 1);
+        if ((e.State & DrawItemState.Focus) != 0)
+            e.DrawFocusRectangle();
+    }
+
+    private int Pixels(int value) => LogicalToDeviceUnits(value);
+
     private void RefreshView(Guid? select = null, bool announceRecovery = false)
     {
         var preferred = select ?? Selected?.Id;
         try
         {
-            vault = service.Read();
+            vault = announceRecovery ? service.ReadWithLauncherDetection(LauncherDiscovery.Find) : service.Read();
             loaded = true;
         }
         catch (Exception error) when (SwitchService.IsExpected(error))
@@ -103,6 +196,8 @@ internal sealed class MainForm : Form
         }
 
         accounts.DataSource = vault.Accounts;
+        accounts.Visible = vault.Accounts.Length > 0;
+        emptyAccounts.Visible = vault.Accounts.Length == 0 && loaded;
         for (var i = 0; i < accounts.Items.Count; i++)
         {
             if (((Account)accounts.Items[i]).Id == preferred)
@@ -111,7 +206,7 @@ internal sealed class MainForm : Form
                 break;
             }
         }
-        path.Text = vault.LauncherPath is { } launcher ? $"Launcher: {launcher}" : "Choose the standalone BSG launcher to begin.";
+        path.Text = vault.LauncherPath is { } launcher ? $"Launcher: {launcher}" : "Launcher location not set";
         if (announceRecovery && vault.Pending is not null)
             status.Text = "A switch was interrupted. Restore the previous settings or keep the current settings.";
         SetControls();
@@ -125,6 +220,7 @@ internal sealed class MainForm : Form
         choose.Enabled = add.Enabled = ready;
         switchAccount.Enabled = signIn.Enabled = ready && vault.LauncherPath is not null && Selected is not null;
         remove.Enabled = ready && Selected is not null;
+        switchAccount.Visible = signIn.Visible = remove.Visible = !recovery;
         restore.Visible = keep.Visible = recovery;
         restore.Enabled = keep.Enabled = loaded && !busy;
     }
@@ -332,13 +428,6 @@ internal sealed class MainForm : Form
         _ => "The operation could not finish. Check access to the launcher and its settings."
     };
 
-    private static FlowLayoutPanel ButtonRow(params Button[] buttons)
-    {
-        var row = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink };
-        row.Controls.AddRange(buttons);
-        return row;
-    }
-
     protected override void Dispose(bool disposing)
     {
         if (disposing && !IsDisposed)
@@ -348,6 +437,9 @@ internal sealed class MainForm : Form
             expiry.Dispose();
             tray.Dispose();
             menu.Dispose();
+            headingFont.Dispose();
+            accountFont.Dispose();
+            bodyFont.Dispose();
         }
         base.Dispose(disposing);
     }
@@ -363,20 +455,25 @@ internal sealed class MainForm : Form
         internal AccountDialog()
         {
             Text = "Add a Tarkov account";
-            ClientSize = new Size(370, 160);
+            ClientSize = new Size(430, 220);
             StartPosition = FormStartPosition.CenterParent;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MinimizeBox = MaximizeBox = false;
             ShowInTaskbar = false;
             AutoScaleMode = AutoScaleMode.Dpi;
-            var save = new Button { Text = "Add account", AutoSize = true };
-            var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, AutoSize = true };
-            var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(12), ColumnCount = 1 };
-            layout.Controls.Add(new Label { Text = "Account name", AutoSize = true });
+            BackColor = SwitcherStyle.Canvas;
+            ForeColor = SwitcherStyle.Text;
+            var save = SwitcherStyle.Button("Add account", primary: true);
+            var cancel = SwitcherStyle.Button("Cancel");
+            cancel.DialogResult = DialogResult.Cancel;
+            var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(20), ColumnCount = 1 };
+            label.Margin = new Padding(0, 5, 0, 14);
+            email.Margin = new Padding(0, 5, 0, 16);
+            layout.Controls.Add(new Label { Text = "Account name", AutoSize = true, Margin = Padding.Empty });
             layout.Controls.Add(label);
-            layout.Controls.Add(new Label { Text = "BSG account email", AutoSize = true });
+            layout.Controls.Add(new Label { Text = "BSG account email", AutoSize = true, Margin = Padding.Empty });
             layout.Controls.Add(email);
-            layout.Controls.Add(ButtonRow(save, cancel));
+            layout.Controls.Add(SwitcherStyle.ButtonRow(save, cancel));
             Controls.Add(layout);
             AcceptButton = save;
             CancelButton = cancel;
