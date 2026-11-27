@@ -8,6 +8,7 @@ internal static class Program
     private static void Main()
     {
         ApplicationConfiguration.Initialize();
+        Application.SetColorMode(SystemColorMode.System);
         using var identity = WindowsIdentity.GetCurrent();
         if (new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator))
         {

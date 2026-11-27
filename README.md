@@ -4,6 +4,8 @@ A Windows tray utility for switching between your own standalone Battlestate Gam
 
 ## Use
 
+The switcher follows the Windows app color preference and respects Windows contrast themes.
+
 1. Open the switcher as a standard Windows user. It detects the standalone BSG launcher from its Windows installation entry. If it cannot find one, choose your installed `BsgLauncher.exe`.
 2. Add an account by name and email. Sign in directly in the BSG launcher.
 3. Click an account in the switcher's tray menu to switch. In the main window, double-click an account or use **Switch account**.
